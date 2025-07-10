@@ -1,0 +1,60 @@
+# 生产环境配置
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+baseai:
+  chat:
+    performance:
+      async-pool-size: 20
+      enable-caching: true
+  llm:
+    default-provider: openai
+    failover-enabled: true
+    openai:
+      enabled: true
+    claude:
+      enabled: true
+
+email:
+  async: true
+  retry:
+    max-attempts: 5
+  batch:
+    size: 100
+
+sms:
+  async: true
+  limit:
+    per-minute: 10
+    per-hour: 50
+    per-day: 500
+
+audit:
+  async:
+    enabled: true
+  batch:
+    size: 200
+    timeout: 3000
+  elasticsearch:
+    enabled: true
+  integrity:
+    check:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    com.clinflash.baseai: INFO
+    org.springframework.web: WARN
+  file:
+    name: /var/log/baseai/chat.log

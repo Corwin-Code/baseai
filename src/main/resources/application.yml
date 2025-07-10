@@ -1,0 +1,328 @@
+# =================== Spring Configuration ===================
+spring:
+  application:
+    name: baseai-cloud           # 应用名称
+
+  # ========== 数据源配置 ==========
+  datasource:
+    driver-class-name: org.postgresql.Driver   # JDBC 驱动
+    url: jdbc:postgresql://${DB_HOST:172.18.20.209}:${DB_PORT:5432}/${DB_DATABASE:baseai}
+    username: ${DB_USERNAME:username}          # 可通过环境变量覆盖
+    password: ${DB_PASSWORD:password}          # 可通过环境变量覆盖
+
+    # 以下是 HikariCP（Spring Boot 默认连接池）参数
+    hikari:
+      minimum-idle: 5     # 池中最小空闲连接数
+      maximum-pool-size: 20  # 最大连接数
+      idle-timeout: 300000   # 空闲超时（ms）
+      max-lifetime: 1800000  # 连接最大生命周期（ms）
+      connection-timeout: 30000  # 获取连接超时（ms）
+      pool-name: BaseAiCloudHikariCP
+
+  # ========== JPA / Hibernate 配置（如使用 Spring Data JPA） ==========
+  jpa:
+    hibernate:
+      ddl-auto: validate         # validate(生产) | update(开发) | create | create-drop，根据环境选择
+    show-sql: false               # 是否在控制台打印 SQL
+    properties:
+      hibernate:
+        format_sql: true          # 格式化 SQL
+        use_sql_comments: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect  # Hibernate 方言
+
+  # ========== Redis配置（用于缓存和会话） ==========
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      jedis:
+        pool:
+          max-active: 10
+          max-idle: 8
+          min-idle: 2
+
+  # ========== Mail邮件服务配置 ==========
+  mail:
+    host: smtp.exmail.qq.com
+    port: 587
+    username: ${EMAIL_USERNAME:noreply@baseai.com}
+    password: ${EMAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+  # ========== Elasticsearch配置（用于审计日志搜索） ==========
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
+    username: ${ELASTICSEARCH_USERNAME:}
+    password: ${ELASTICSEARCH_PASSWORD:}
+    connection-timeout: 5s
+    socket-timeout: 30s
+
+  # ========== Spring AI / OpenAI 配置 ==========
+  ai:
+    openai:
+      base-url: ${OPEN_BASE_URL:https://api.openai-hk.com}  # OpenAI API 地址
+      api-key: ${OPEN_API_KEY:hk-5y2tsx100002516783d25a5427af18502616fb030a23be51}
+
+  # ========== Spring Security 配置 ==========
+  security:
+    user:
+      name: ${SECURITY_USER:admin}            # 环境变量 SECURITY_USER，默认 admin
+      password: ${SECURITY_PASSWORD:ChangeMe123!}  # 环境变量 SECURITY_PASSWORD，默认 ChangeMe123!
+
+# ========== Server ==========
+server:
+  port: ${SERVER_PORT:9999}       # 服务端口，默认 9999
+
+# =================== KB Module Configuration ===================
+kb:
+  document:
+    max-size-bytes: 10485760  # 10MB
+    max-batch-size: 100
+    default-chunk-size: 1000
+    chunk-overlap: 200
+    min-chunk-size: 100
+    supported-mime-types:
+      - text/plain
+      - text/markdown
+      - application/pdf
+
+  vector:
+    default-model: text-embedding-3-small
+    dimension: 1536
+    batch-size: 50
+    timeout-seconds: 30
+    normalize: true
+    cache-ttl-seconds: 3600
+
+  search:
+    default-top-k: 10
+    max-top-k: 100
+    default-threshold: 0.7
+    min-threshold: 0.0
+    result-cache-ttl-seconds: 300
+    max-highlights: 3
+    highlight-length: 100
+
+  performance:
+    db-pool-size: 20
+    async-pool-size: 10
+    batch-process-size: 100
+    enable-query-cache: true
+    query-cache-size: 1000
+    enable-metrics: true
+    slow-query-threshold-ms: 1000
+
+  embedding:
+    provider: openai  # 或 openai, baidu, aliyun
+    api-url: https://api.openai.com/v1/embeddings
+    api-key: ${OPENAI_API_KEY}
+    timeout-ms: 30000
+    max-retries: 3
+    batch-size: 100
+    cache-enabled: true
+    cache-ttl-seconds: 3600
+
+# =================== Chat Module Configuration ===================
+baseai:
+  chat:
+    # 基础配置
+    max-message-length: 32000
+    default-embedding-model: text-embedding-3-small
+
+    # 知识检索配置
+    knowledge-retrieval-top-k: 5
+    knowledge-retrieval-threshold: 0.7
+
+    # 速率限制配置
+    rate-limit-enabled: true
+    rate-limit-max: 100
+    rate-limit-window: 60  # 分钟
+
+    # 语义分析配置
+    semantic-analysis-enabled: true
+
+    # 性能配置
+    performance:
+      async-pool-size: 10
+      max-context-tokens: 8000
+      enable-caching: true
+
+  # LLM服务配置
+  llm:
+    default-provider: openai
+    failover-enabled: true
+    default-timeout: PT2M  # ISO-8601 duration format
+
+    # OpenAI配置
+    openai:
+      enabled: true
+      api-key: ${OPENAI_API_KEY:your-openai-api-key}
+      base-url: https://api.openai.com/v1
+      organization: ${OPENAI_ORG_ID:}
+      timeout: PT2M
+
+    # Claude配置
+    claude:
+      enabled: false
+      api-key: ${CLAUDE_API_KEY:your-claude-api-key}
+      base-url: https://api.anthropic.com
+      timeout: PT3M
+
+    # Mock配置（开发/测试用）
+    mock:
+      enabled: false
+      simulated-delay: PT0.5S
+      simulate-errors: false
+      error-rate: 0.1
+
+# =================== 邮件服务配置 ===================
+email:
+  # 发送配置
+  from: ${EMAIL_FROM:noreply@baseai.com}
+  from-name: ${EMAIL_FROM_NAME:BaseAI System}
+  base-url: ${EMAIL_BASE_URL:https://app.baseai.com}
+
+  # 发送模式
+  async: ${EMAIL_ASYNC:true}
+
+  # 重试配置
+  retry:
+    max-attempts: ${EMAIL_RETRY_MAX_ATTEMPTS:3}
+
+  # 批量发送配置
+  batch:
+    size: ${EMAIL_BATCH_SIZE:50}
+
+  # 模板配置
+  template:
+    enabled: ${EMAIL_TEMPLATE_ENABLED:true}
+    location: classpath:/email-templates/
+    cache-enabled: true
+
+# =================== 短信服务配置 ===================
+sms:
+  # 服务商配置
+  provider: ${SMS_PROVIDER:aliyun}
+  access-key: ${SMS_ACCESS_KEY}
+  access-secret: ${SMS_ACCESS_SECRET}
+  signature: ${SMS_SIGNATURE:BaseAI}
+
+  # 发送限制配置
+  limit:
+    per-minute: ${SMS_LIMIT_PER_MINUTE:5}
+    per-hour: ${SMS_LIMIT_PER_HOUR:20}
+    per-day: ${SMS_LIMIT_PER_DAY:100}
+
+  # 发送模式
+  async: ${SMS_ASYNC:true}
+
+  # 重复检测配置
+  duplicate-check-minutes: ${SMS_DUPLICATE_CHECK_MINUTES:2}
+
+  # 模板配置
+  templates:
+    verification-code: ${SMS_TEMPLATE_VERIFICATION_CODE:SMS_123456}
+    security-alert: ${SMS_TEMPLATE_SECURITY_ALERT:SMS_789012}
+    notification: ${SMS_TEMPLATE_NOTIFICATION:SMS_345678}
+
+# =================== 审计服务配置 ===================
+audit:
+  # 异步处理配置
+  async:
+    enabled: ${AUDIT_ASYNC_ENABLED:true}
+
+  # 批处理配置
+  batch:
+    size: ${AUDIT_BATCH_SIZE:100}
+    timeout: ${AUDIT_BATCH_TIMEOUT:5000}
+
+  # Elasticsearch配置
+  elasticsearch:
+    enabled: ${AUDIT_ELASTICSEARCH_ENABLED:true}
+    index-prefix: ${AUDIT_ELASTICSEARCH_INDEX_PREFIX:audit}
+
+  # 完整性检查配置
+  integrity:
+    check:
+      enabled: ${AUDIT_INTEGRITY_CHECK_ENABLED:true}
+      schedule: ${AUDIT_INTEGRITY_CHECK_SCHEDULE:0 2 * * *} # 每天凌晨2点
+
+  # 数据保留配置
+  retention:
+    default-days: ${AUDIT_RETENTION_DEFAULT_DAYS:2555} # 7年
+    auto-archive: ${AUDIT_RETENTION_AUTO_ARCHIVE:true}
+    archive-location: ${AUDIT_RETENTION_ARCHIVE_LOCATION:s3://baseai-audit-archive/}
+
+  # 报告配置
+  report:
+    enabled: ${AUDIT_REPORT_ENABLED:true}
+    output-location: ${AUDIT_REPORT_OUTPUT_LOCATION:/tmp/audit-reports/}
+
+  # 统计缓存配置
+  statistics:
+    cache:
+      enabled: ${AUDIT_STATISTICS_CACHE_ENABLED:true}
+      ttl: ${AUDIT_STATISTICS_CACHE_TTL:3600} # 1小时
+
+# =================== Monitoring Configuration ===================
+management:
+  server:
+    port: ${MGMT_PORT:8888}       # 管理端口（监控、健康检查等）
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env  # 暴露哪些端点
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
+        "[chat.response.time]": true
+  health:
+    db:
+      enabled: true                 # 数据库健康检查
+    redis:
+      enabled: false                # Redis健康检查
+    rabbit:
+      enabled: false                # RabbitMQ健康检查
+
+# =================== Logging Configuration 日志配置 ===================
+logging:
+  level:
+    root: INFO                     # 全局日志级别
+    com.clinflash.baseai: DEBUG    # 应用包名日志级别
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/baseai-chat.log
+    max-size: 100MB
+    max-history: 30
+
+# ========== Swagger / OpenAPI ==========
+#springdoc:
+#  api-docs:
+#    path: /v3/api-docs
+#  swagger-ui:
+#    path: /swagger-ui.html

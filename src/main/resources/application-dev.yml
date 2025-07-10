@@ -1,0 +1,33 @@
+# 开发环境配置
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+baseai:
+  llm:
+    mock:
+      enabled: true
+    openai:
+      enabled: false
+    claude:
+      enabled: false
+
+email:
+  async: false
+
+sms:
+  provider: mock
+  async: false
+
+audit:
+  elasticsearch:
+    enabled: false
+  integrity:
+    check:
+      enabled: false
+
+logging:
+  level:
+    com.clinflash.baseai: DEBUG
+    org.hibernate.SQL: DEBUG
