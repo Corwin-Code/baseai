@@ -409,6 +409,7 @@ public class FlowOrchestrationAppService {
             String snapshotJson = buildService.createSnapshotJson(definition, nodes, edges);
             FlowSnapshot snapshot = FlowSnapshot.create(
                     definition.id(),
+                    null,
                     definition.version(),
                     snapshotJson,
                     cmd.operatorId()
@@ -952,7 +953,7 @@ public class FlowOrchestrationAppService {
 
             // 调用执行服务
             String resultJson = executionService.executeFlow(
-                    run.id(), snapshot.snapshotJson(), inputData, timeoutMinutes);
+                    run.id(), snapshot, inputData, timeoutMinutes);
 
             // 标记成功
             run = run.success(resultJson);

@@ -1,12 +1,13 @@
 package com.clinflash.baseai.infrastructure.monitoring;
 
-import com.clinflash.baseai.application.chat.service.ChatApplicationService;
+import com.clinflash.baseai.application.metrics.service.MetricsService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -24,7 +25,7 @@ import java.util.concurrent.ConcurrentMap;
  * <p>5. <strong>成本优化：</strong>了解资源使用效率，优化成本结构</p>
  */
 @Component
-public class ChatMetricsCollector implements ChatApplicationService.MetricsService {
+public class ChatMetricsCollector implements MetricsService {
 
     private final MeterRegistry meterRegistry;
 
@@ -89,6 +90,16 @@ public class ChatMetricsCollector implements ChatApplicationService.MetricsServi
     }
 
     @Override
+    public void recordSearch(long durationMs, int resultCount) {
+
+    }
+
+    @Override
+    public void recordResourceUsage(String resourceType, double usagePercent) {
+
+    }
+
+    @Override
     public void recordFeedback(Long messageId, Integer rating, String comment) {
         // 记录用户反馈
         Counter feedbackCounter = dynamicCounters.computeIfAbsent(
@@ -99,6 +110,11 @@ public class ChatMetricsCollector implements ChatApplicationService.MetricsServi
                         .register(meterRegistry)
         );
         feedbackCounter.increment();
+    }
+
+    @Override
+    public Object getMetrics(String operation, OffsetDateTime startTime, OffsetDateTime endTime) {
+        return null;
     }
 
     /**
