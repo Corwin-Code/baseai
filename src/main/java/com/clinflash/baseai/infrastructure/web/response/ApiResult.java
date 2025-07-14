@@ -107,6 +107,22 @@ public class ApiResult<T> {
     }
 
     /**
+     * 创建详细错误响应
+     *
+     * @param response 错误响应
+     * @return 错误的API响应对象
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> ApiResult<T> error(ErrorResponse response) {
+        return new <T>ApiResult<T>(
+                false,
+                response.getMessage(),
+                (T) response.getDetails(),
+                response.getCode()
+        );
+    }
+
+    /**
      * 检查响应是否表示失败
      *
      * @return true 如果操作失败
