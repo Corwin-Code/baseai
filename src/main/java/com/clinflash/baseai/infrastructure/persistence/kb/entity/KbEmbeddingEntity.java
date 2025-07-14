@@ -1,6 +1,6 @@
 package com.clinflash.baseai.infrastructure.persistence.kb.entity;
 
-import com.clinflash.baseai.infrastructure.persistence.type.VectorType;
+import com.clinflash.baseai.infrastructure.persistence.kb.mapper.VectorType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;

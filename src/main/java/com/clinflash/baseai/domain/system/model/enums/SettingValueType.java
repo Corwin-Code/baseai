@@ -1,16 +1,20 @@
 package com.clinflash.baseai.domain.system.model.enums;
 
-/**
- * <b>sys_settings.value_type</b> 枚举，定义系统支持的参数数据类型。
- *
- * <p>新增类型时请同步更新 SysSetting 解析器。</p>
- */
-public enum SettingValueType {
+import lombok.Getter;
 
-    STRING,
-    INT,
-    BOOL,
-    JSON,
-    FLOAT,
-    LONG
+/**
+ * <h2>设置值类型枚举</h2>
+ */
+@Getter
+public enum SettingValueType {
+    STRING("字符串"),
+    INTEGER("整数"),
+    BOOLEAN("布尔值"),
+    JSON("JSON对象");
+
+    private final String label;
+
+    SettingValueType(String label) {
+        this.label = label;
+    }
 }
