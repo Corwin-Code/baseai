@@ -4,6 +4,8 @@ import com.clinflash.baseai.domain.flow.model.FlowNode;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -32,10 +34,12 @@ public class FlowNodeEntity {
     @Column(name = "name", length = 128)
     private String name;
 
-    @Column(name = "config_json", columnDefinition = "TEXT")
+    @Column(name = "config_json", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String configJson;
 
-    @Column(name = "retry_policy_json", columnDefinition = "TEXT")
+    @Column(name = "retry_policy_json", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String retryPolicyJson;
 
     @Column(name = "created_by", nullable = false)

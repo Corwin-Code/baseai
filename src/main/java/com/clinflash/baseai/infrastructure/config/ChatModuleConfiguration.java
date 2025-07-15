@@ -1,5 +1,8 @@
 package com.clinflash.baseai.infrastructure.config;
 
+import com.clinflash.baseai.application.flow.service.FlowOrchestrationAppService;
+import com.clinflash.baseai.application.kb.service.KnowledgeBaseAppService;
+import com.clinflash.baseai.application.mcp.service.McpApplicationService;
 import com.clinflash.baseai.infrastructure.integration.ChatIntegrationService;
 import com.clinflash.baseai.infrastructure.monitoring.ChatMetricsCollector;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -86,9 +89,9 @@ public class ChatModuleConfiguration {
      */
     @Bean
     public ChatIntegrationService chatIntegrationService(
-            com.clinflash.baseai.application.kb.service.KnowledgeBaseAppService kbService,
-            com.clinflash.baseai.application.mcp.service.McpApplicationService mcpService,
-            com.clinflash.baseai.application.flow.service.FlowOrchestrationAppService flowService) {
+            KnowledgeBaseAppService kbService,
+            McpApplicationService mcpService,
+            FlowOrchestrationAppService flowService) {
 
         return new ChatIntegrationService(kbService, mcpService, flowService);
     }

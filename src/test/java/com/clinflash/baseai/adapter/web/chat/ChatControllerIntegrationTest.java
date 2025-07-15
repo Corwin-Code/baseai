@@ -3,6 +3,7 @@ package com.clinflash.baseai.adapter.web.chat;
 import com.clinflash.baseai.application.chat.command.CreateChatThreadCommand;
 import com.clinflash.baseai.application.chat.command.SendMessageCommand;
 import com.clinflash.baseai.infrastructure.config.ChatTestConfiguration;
+import com.clinflash.baseai.infrastructure.web.response.ApiResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -86,7 +87,7 @@ public class ChatControllerIntegrationTest {
 
             // 验证返回的数据结构
             String responseJson = result.getResponse().getContentAsString();
-            ChatController.ApiResult<?> apiResult = objectMapper.readValue(responseJson, ChatController.ApiResult.class);
+            ApiResult<?> apiResult = objectMapper.readValue(responseJson, ApiResult.class);
             assertTrue(apiResult.isSuccess());
             assertNotNull(apiResult.getData());
         }
@@ -150,7 +151,7 @@ public class ChatControllerIntegrationTest {
 
             // 验证响应结构
             String responseJson = result.getResponse().getContentAsString();
-            ChatController.ApiResult<?> apiResult = objectMapper.readValue(responseJson, ChatController.ApiResult.class);
+            ApiResult<?> apiResult = objectMapper.readValue(responseJson, ApiResult.class);
             assertTrue(apiResult.isSuccess());
         }
 

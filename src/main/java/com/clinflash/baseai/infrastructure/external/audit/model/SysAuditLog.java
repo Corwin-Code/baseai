@@ -5,6 +5,8 @@ import com.clinflash.baseai.infrastructure.persistence.user.entity.SysUserEntity
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -74,7 +76,8 @@ public class SysAuditLog {
     /**
      * 详细内容（JSON 格式存储）
      */
-    @Lob
+    @Column(name = "detail", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String detail;
 
     /**

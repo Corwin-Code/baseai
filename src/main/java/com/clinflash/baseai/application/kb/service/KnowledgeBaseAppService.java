@@ -1073,7 +1073,11 @@ public class KnowledgeBaseAppService {
         }
     }
 
+    /**
+     * 根据向量搜索结果构建 SearchResultDTO 列表
+     */
     private List<SearchResultDTO> buildSearchResults(List<VectorSearchService.SearchResult> searchResults, String query) {
+        // 批量查 chunk
         List<Long> chunkIds = searchResults.stream()
                 .map(VectorSearchService.SearchResult::chunkId)
                 .toList();
@@ -1082,6 +1086,7 @@ public class KnowledgeBaseAppService {
         Map<Long, Chunk> chunkMap = chunks.stream()
                 .collect(Collectors.toMap(Chunk::id, chunk -> chunk));
 
+        // 批量查文档
         Set<Long> docIds = chunks.stream()
                 .map(Chunk::documentId)
                 .collect(Collectors.toSet());
@@ -1090,6 +1095,7 @@ public class KnowledgeBaseAppService {
                 .stream()
                 .collect(Collectors.toMap(Document::id, doc -> doc));
 
+        // 批量查标签
         Map<Long, Set<Long>> chunkTagMap = chunkTagRepo.findTagIdsByChunkIds(chunkIds);
         Set<Long> allTagIds = chunkTagMap.values().stream()
                 .flatMap(Set::stream)
@@ -1099,14 +1105,18 @@ public class KnowledgeBaseAppService {
                 .stream()
                 .collect(Collectors.toMap(Tag::id, tag -> tag));
 
+        // 组装 DTO
         return searchResults.stream()
                 .map(result -> {
+                    // 找到对应的 chunk
                     Chunk chunk = chunkMap.get(result.chunkId());
                     if (chunk == null) return null;
 
+                    // 文档标题回退
                     Document doc = docMap.get(chunk.documentId());
                     String docTitle = doc != null ? doc.title() : "未知文档";
 
+                    // 生成高亮
                     List<String> highlights = KbUtils.generateHighlights(
                             chunk.text(),
                             Arrays.asList(query.split("\\s+")),
@@ -1114,6 +1124,7 @@ public class KnowledgeBaseAppService {
                             config.getSearch().getHighlightLength()
                     );
 
+                    // 关联标签名称
                     List<String> tagNames = chunkTagMap.getOrDefault(chunk.id(), Set.of())
                             .stream()
                             .map(tagMap::get)
@@ -1168,12 +1179,21 @@ public class KnowledgeBaseAppService {
         return buildSearchResults(fakeResults, keywords);
     }
 
+    /**
+     * 合并向量搜索结果和文本搜索结果，并根据加权分数取前 topK 条
+     *
+     * @param vectorResults 向量搜索结果列表
+     * @param textResults   文本搜索结果列表
+     * @param vectorWeight  向量结果权重（0–1 之间）
+     * @param topK          最终返回的条目数
+     */
     private List<SearchResultDTO> mergeSearchResults(List<SearchResultDTO> vectorResults,
                                                      List<SearchResultDTO> textResults,
                                                      float vectorWeight,
                                                      int topK) {
         Map<Long, SearchResultDTO> mergedMap = new HashMap<>();
 
+        // 处理向量结果：score * vectorWeight
         for (SearchResultDTO result : vectorResults) {
             SearchResultDTO weighted = new SearchResultDTO(
                     result.chunkId(),
@@ -1188,6 +1208,7 @@ public class KnowledgeBaseAppService {
             mergedMap.put(result.chunkId(), weighted);
         }
 
+        // 处理文本结果：与已有条目合并或新条目
         float textWeight = 1.0f - vectorWeight;
         for (SearchResultDTO result : textResults) {
             SearchResultDTO existing = mergedMap.get(result.chunkId());
@@ -1205,6 +1226,7 @@ public class KnowledgeBaseAppService {
                 );
                 mergedMap.put(result.chunkId(), combined);
             } else {
+                // 没有：直接放权重后的
                 SearchResultDTO weighted = new SearchResultDTO(
                         result.chunkId(),
                         result.documentId(),

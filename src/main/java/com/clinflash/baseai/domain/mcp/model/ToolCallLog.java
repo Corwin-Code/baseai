@@ -1,5 +1,7 @@
 package com.clinflash.baseai.domain.mcp.model;
 
+import com.clinflash.baseai.infrastructure.persistence.mcp.entity.enums.ToolCallStatus;
+
 import java.time.OffsetDateTime;
 import java.util.Map;
 
@@ -18,7 +20,7 @@ public record ToolCallLog(
         Long flowRunId,
         Map<String, Object> params,
         Map<String, Object> result,
-        String status,
+        ToolCallStatus status,
         String errorMsg,
         Integer latencyMs,
         OffsetDateTime createdAt
@@ -37,7 +39,7 @@ public record ToolCallLog(
                 flowRunId,
                 params,
                 null, // 结果稍后更新
-                "STARTED", // 初始状态
+                ToolCallStatus.STARTED, // 初始状态
                 null,
                 null,
                 OffsetDateTime.now()
@@ -47,7 +49,7 @@ public record ToolCallLog(
     /**
      * 更新调用状态和结果
      */
-    public ToolCallLog updateStatus(String status, Map<String, Object> result, String errorMsg) {
+    public ToolCallLog updateStatus(ToolCallStatus status, Map<String, Object> result, String errorMsg) {
         Integer latency = null;
         if (createdAt != null) {
             latency = (int) (System.currentTimeMillis() -

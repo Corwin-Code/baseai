@@ -42,9 +42,6 @@ public class SysTenantEntity {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
-    @Version
-    private Long version;
-
     protected SysTenantEntity() {
     }
 

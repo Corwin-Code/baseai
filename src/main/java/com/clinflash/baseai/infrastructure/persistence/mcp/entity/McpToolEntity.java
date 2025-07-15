@@ -6,6 +6,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -45,10 +47,12 @@ public class McpToolEntity {
     @Column(name = "icon_url", length = 256)
     private String iconUrl;
 
-    @Column(name = "param_schema", columnDefinition = "TEXT")
+    @Column(name = "param_schema", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String paramSchema;
 
-    @Column(name = "result_schema", columnDefinition = "TEXT")
+    @Column(name = "result_schema", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String resultSchema;
 
     @Column(name = "endpoint", length = 256)

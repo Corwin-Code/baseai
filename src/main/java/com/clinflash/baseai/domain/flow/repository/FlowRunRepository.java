@@ -16,13 +16,13 @@ public interface FlowRunRepository {
 
     Optional<FlowRun> findById(Long id);
 
-    List<FlowRun> findByDefinitionId(Long definitionId, int page, int size);
+    List<FlowRun> findBySnapshotId(Long snapshotId, int page, int size);
 
-    long countByDefinitionId(Long definitionId);
+    long countBySnapshotId(Long snapshotId);
 
-    List<FlowRun> findByDefinitionIdAndStatus(Long definitionId, RunStatus status, int page, int size);
+    List<FlowRun> findBySnapshotIdAndStatus(Long snapshotId, RunStatus status, int page, int size);
 
-    long countByDefinitionIdAndStatus(Long definitionId, RunStatus status);
+    long countBySnapshotIdAndStatus(Long snapshotId, RunStatus status);
 
     int countByProjectId(Long projectId);
 

@@ -277,7 +277,7 @@ public class FlowSnapshotJpaRepository implements FlowSnapshotRepository {
 
         try {
             long totalCount = springRepo.count();
-            long availableCount = springRepo.countByDeletedAtIsNull(null);
+            long availableCount = springRepo.countByDeletedAtIsNull();
             long deletedCount = totalCount - availableCount;
 
             SnapshotStatistics stats = new SnapshotStatistics(

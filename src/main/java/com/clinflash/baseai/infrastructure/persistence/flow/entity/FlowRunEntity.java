@@ -5,6 +5,8 @@ import com.clinflash.baseai.domain.flow.model.RunStatus;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -27,10 +29,12 @@ public class FlowRunEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", columnDefinition = "smallint")
+    @Enumerated(EnumType.ORDINAL)
+    private RunStatus status;
 
-    @Column(name = "result_json", columnDefinition = "TEXT")
+    @Column(name = "result_json", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String resultJson;
 
     @Column(name = "created_by")
@@ -52,7 +56,7 @@ public class FlowRunEntity {
         entity.setId(domain.id());
         entity.setSnapshotId(domain.snapshotId());
         entity.setUserId(domain.userId());
-        entity.setStatus(domain.status() != null ? domain.status().getCode() : null);
+        entity.setStatus(domain.status());
         entity.setResultJson(domain.resultJson());
         entity.setCreatedBy(domain.createdBy());
         entity.setStartedAt(domain.startedAt());
@@ -62,13 +66,11 @@ public class FlowRunEntity {
     }
 
     public FlowRun toDomain() {
-        RunStatus runStatus = this.status != null ? RunStatus.fromCode(this.status) : null;
-
         return new FlowRun(
                 this.id,
                 this.snapshotId,
                 this.userId,
-                runStatus,
+                this.status,
                 this.resultJson,
                 this.createdBy,
                 this.startedAt,
@@ -82,7 +84,7 @@ public class FlowRunEntity {
 
         this.setSnapshotId(domain.snapshotId());
         this.setUserId(domain.userId());
-        this.setStatus(domain.status() != null ? domain.status().getCode() : null);
+        this.setStatus(domain.status());
         this.setResultJson(domain.resultJson());
         this.setCreatedBy(domain.createdBy());
         this.setStartedAt(domain.startedAt());

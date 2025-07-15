@@ -5,6 +5,8 @@ import com.clinflash.baseai.domain.flow.model.FlowStatus;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -33,10 +35,12 @@ public class FlowDefinitionEntity {
     @Column(name = "is_latest")
     private Boolean isLatest;
 
-    @Column(name = "status")
-    private Integer status;
+    @Column(name = "status", columnDefinition = "smallint")
+    @Enumerated(EnumType.ORDINAL)
+    private FlowStatus status;
 
-    @Column(name = "diagram_json", columnDefinition = "TEXT")
+    @Column(name = "diagram_json", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String diagramJson;
 
     @Column(name = "description", columnDefinition = "TEXT")
@@ -66,7 +70,7 @@ public class FlowDefinitionEntity {
         entity.setName(domain.name());
         entity.setVersion(domain.version());
         entity.setIsLatest(domain.isLatest());
-        entity.setStatus(domain.status() != null ? domain.status().getCode() : null);
+        entity.setStatus(domain.status());
         entity.setDiagramJson(domain.diagramJson());
         entity.setDescription(domain.description());
         entity.setCreatedBy(domain.createdBy());
@@ -78,15 +82,13 @@ public class FlowDefinitionEntity {
     }
 
     public FlowDefinition toDomain() {
-        FlowStatus flowStatus = this.status != null ? FlowStatus.fromCode(this.status) : null;
-
         return new FlowDefinition(
                 this.id,
                 this.projectId,
                 this.name,
                 this.version,
                 this.isLatest,
-                flowStatus,
+                this.status,
                 this.diagramJson,
                 this.description,
                 this.createdBy,
@@ -104,7 +106,7 @@ public class FlowDefinitionEntity {
         this.setName(domain.name());
         this.setVersion(domain.version());
         this.setIsLatest(domain.isLatest());
-        this.setStatus(domain.status() != null ? domain.status().getCode() : null);
+        this.setStatus(domain.status());
         this.setDiagramJson(domain.diagramJson());
         this.setDescription(domain.description());
         this.setCreatedBy(domain.createdBy());

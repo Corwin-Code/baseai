@@ -1,5 +1,6 @@
 package com.clinflash.baseai.infrastructure.repository.flow.spring;
 
+import com.clinflash.baseai.domain.flow.model.RunStatus;
 import com.clinflash.baseai.infrastructure.persistence.flow.entity.FlowRunEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,14 +17,14 @@ import java.time.OffsetDateTime;
 @Repository
 public interface SpringFlowRunRepo extends JpaRepository<FlowRunEntity, Long> {
 
-    Page<FlowRunEntity> findByDefinitionIdAndDeletedAtIsNull(Long definitionId, Pageable pageable);
+    Page<FlowRunEntity> findBySnapshotIdAndDeletedAtIsNull(Long snapshotId, Pageable pageable);
 
-    long countByDefinitionIdAndDeletedAtIsNull(Long definitionId);
+    long countBySnapshotIdAndDeletedAtIsNull(Long snapshotId);
 
-    Page<FlowRunEntity> findByDefinitionIdAndStatusAndDeletedAtIsNull(
-            Long definitionId, Integer status, Pageable pageable);
+    Page<FlowRunEntity> findBySnapshotIdAndStatusAndDeletedAtIsNull(
+            Long snapshotId, RunStatus status, Pageable pageable);
 
-    long countByDefinitionIdAndStatusAndDeletedAtIsNull(Long definitionId, Integer status);
+    long countBySnapshotIdAndStatusAndDeletedAtIsNull(Long snapshotId, RunStatus status);
 
     @Query("SELECT COUNT(r) FROM FlowRunEntity r " +
             "JOIN FlowSnapshotEntity s ON r.snapshotId = s.id " +

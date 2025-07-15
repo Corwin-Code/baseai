@@ -352,17 +352,17 @@ public class FlowOrchestrationController {
     /**
      * 获取运行历史
      */
-    @GetMapping("/definitions/{definitionId}/runs")
+    @GetMapping("/definitions/{snapshotId}/runs")
     @Operation(summary = "获取运行历史", description = "分页获取流程定义的所有运行历史记录。")
-    @PreAuthorize("hasPermission(#definitionId, 'FLOW_DEFINITION', 'READ')")
+    @PreAuthorize("hasPermission(#snapshotId, 'FLOW_DEFINITION', 'READ')")
     public ResponseEntity<ApiResult<PageResultDTO<FlowRunDTO>>> getRunHistory(
-            @PathVariable Long definitionId,
+            @PathVariable Long snapshotId,
             @RequestParam(defaultValue = "0") Integer page,
             @RequestParam(defaultValue = "20") Integer size,
             @RequestParam(required = false) String status) {
 
         PageResultDTO<FlowRunDTO> result = appService.getRunHistory(
-                definitionId, page, size, status);
+                snapshotId, page, size, status);
 
         return ResponseEntity.ok(ApiResult.success(result));
     }

@@ -1,11 +1,12 @@
 package com.clinflash.baseai.infrastructure.config;
 
-import com.clinflash.baseai.infrastructure.exception.ChatCompletionException;
 import com.clinflash.baseai.infrastructure.external.llm.ChatCompletionService;
 import com.clinflash.baseai.infrastructure.external.llm.impl.ClaudeChatCompletionService;
+import com.clinflash.baseai.infrastructure.external.llm.impl.CompositeChatCompletionService;
 import com.clinflash.baseai.infrastructure.external.llm.impl.MockChatCompletionService;
 import com.clinflash.baseai.infrastructure.external.llm.impl.OpenAIChatCompletionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -14,14 +15,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.List;
-import java.util.Map;
-
 /**
  * <h2>LLM服务自动配置类</h2>
  *
- * <p>这个配置类是整个AI对话系统的"神经中枢"，负责协调和管理多个LLM提供商的接入。
- * 就像一个智能的调度中心，它根据配置自动选择和初始化合适的AI服务提供商。</p>
+ * <p>这个配置类负责协调和管理多个LLM提供商的接入。它根据配置自动选择和初始化合适的AI服务提供商。</p>
  *
  * <p><b>多provider架构的设计哲学：</b></p>
  * <p>在企业级AI应用中，依赖单一AI提供商是有风险的。我们采用多provider架构，
@@ -54,8 +51,8 @@ public class LLMServiceAutoConfiguration {
     public ChatCompletionService primaryChatCompletionService(
             LLMServiceProperties properties,
             @Qualifier("openaiChatCompletionService") ChatCompletionService openaiService,
-            @Qualifier("claudeChatCompletionService") ChatCompletionService claudeService,
-            @Qualifier("mockChatCompletionService") ChatCompletionService mockService) {
+            @Qualifier("claudeChatCompletionService") @Autowired(required = false) ChatCompletionService claudeService,
+            @Qualifier("mockChatCompletionService") @Autowired(required = false) ChatCompletionService mockService) {
 
         return new CompositeChatCompletionService(properties, openaiService, claudeService, mockService);
     }
@@ -130,98 +127,5 @@ public class LLMServiceAutoConfiguration {
     @ConfigurationProperties(prefix = "baseai.llm")
     public LLMServiceProperties llmServiceProperties() {
         return new LLMServiceProperties();
-    }
-}
-
-/**
- * <h2>复合聊天完成服务</h2>
- *
- * <p>这是一个智能路由器，实现了多个AI提供商之间的负载均衡和故障转移。
- * 它就像一个经验丰富的项目经理，知道什么时候该找哪个专家来解决问题。</p>
- */
-class CompositeChatCompletionService implements ChatCompletionService {
-
-    private final LLMServiceProperties properties;
-    private final Map<String, ChatCompletionService> services;
-    private final ChatCompletionService defaultService;
-
-    public CompositeChatCompletionService(
-            LLMServiceProperties properties,
-            ChatCompletionService openaiService,
-            ChatCompletionService claudeService,
-            ChatCompletionService mockService) {
-
-        this.properties = properties;
-        this.services = Map.of(
-                "openai", openaiService,
-                "claude", claudeService,
-                "mock", mockService
-        );
-
-        // 根据配置确定默认服务
-        String defaultProvider = properties.getDefaultProvider();
-        this.defaultService = services.getOrDefault(defaultProvider, openaiService);
-    }
-
-    @Override
-    public ChatCompletionResult generateCompletion(Map<String, Object> context) {
-        String modelCode = (String) context.get("model");
-        ChatCompletionService service = selectServiceForModel(modelCode);
-
-        try {
-            return service.generateCompletion(context);
-        } catch (ChatCompletionException e) {
-            // 实现故障转移逻辑
-            if (properties.isFailoverEnabled() && service != defaultService) {
-                return defaultService.generateCompletion(context);
-            }
-            throw e;
-        }
-    }
-
-    @Override
-    public void generateStreamResponse(Map<String, Object> context, java.util.function.Consumer<String> onChunk) {
-        String modelCode = (String) context.get("model");
-        ChatCompletionService service = selectServiceForModel(modelCode);
-        service.generateStreamResponse(context, onChunk);
-    }
-
-    @Override
-    public boolean isModelAvailable(String modelCode) {
-        ChatCompletionService service = selectServiceForModel(modelCode);
-        return service.isModelAvailable(modelCode);
-    }
-
-    @Override
-    public boolean isHealthy() {
-        return services.values().stream().anyMatch(ChatCompletionService::isHealthy);
-    }
-
-    @Override
-    public List<String> getSupportedModels() {
-        return services.values().stream()
-                .flatMap(service -> service.getSupportedModels().stream())
-                .distinct()
-                .toList();
-    }
-
-    /**
-     * 根据模型选择合适的服务提供商
-     */
-    private ChatCompletionService selectServiceForModel(String modelCode) {
-        if (modelCode == null) {
-            return defaultService;
-        }
-
-        // 根据模型前缀选择服务
-        if (modelCode.startsWith("gpt-")) {
-            return services.get("openai");
-        } else if (modelCode.startsWith("claude-")) {
-            return services.get("claude");
-        } else if (modelCode.startsWith("mock-")) {
-            return services.get("mock");
-        }
-
-        return defaultService;
     }
 }

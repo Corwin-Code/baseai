@@ -2,12 +2,12 @@ package com.clinflash.baseai.infrastructure.persistence.mcp.entity;
 
 import com.clinflash.baseai.domain.mcp.model.ToolCallLog;
 import com.clinflash.baseai.infrastructure.persistence.mcp.entity.enums.ToolCallStatus;
-import com.vladmihalcea.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.Type;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -40,17 +40,17 @@ public class McpToolCallLogEntity {
     @Column(name = "flow_run_id")
     private Long flowRunId;
 
-    @Type(JsonType.class)
-    @Column(name = "params", columnDefinition = "jsonb")
+    @Column(name = "params", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> params;
 
-    @Type(JsonType.class)
-    @Column(name = "result", columnDefinition = "jsonb")
+    @Column(name = "result", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> result;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status")
-    private ToolCallStatus status = ToolCallStatus.STARTED;
+    @Column(name = "status", columnDefinition = "smallint")
+    @Enumerated(EnumType.ORDINAL)
+    private ToolCallStatus status;
 
     @Column(name = "error_msg", columnDefinition = "TEXT")
     private String errorMsg;
@@ -83,7 +83,7 @@ public class McpToolCallLogEntity {
         entity.flowRunId = log.flowRunId();
         entity.params = log.params();
         entity.result = log.result();
-        entity.status = ToolCallStatus.fromString(log.status());
+        entity.status = log.status();
         entity.errorMsg = log.errorMsg();
         entity.latencyMs = log.latencyMs();
         entity.createdAt = log.createdAt();
@@ -101,7 +101,7 @@ public class McpToolCallLogEntity {
                 flowRunId,
                 params,
                 result,
-                status != null ? status.name() : null,
+                status,
                 errorMsg,
                 latencyMs,
                 createdAt
@@ -114,7 +114,7 @@ public class McpToolCallLogEntity {
         }
 
         this.result = log.result();
-        this.status = ToolCallStatus.fromString(log.status());
+        this.status = log.status();
         this.errorMsg = log.errorMsg();
         this.latencyMs = log.latencyMs();
     }

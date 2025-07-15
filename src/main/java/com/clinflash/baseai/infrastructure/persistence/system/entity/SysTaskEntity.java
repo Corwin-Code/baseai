@@ -5,6 +5,8 @@ import com.clinflash.baseai.domain.system.model.enums.TaskStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -28,10 +30,12 @@ public class SysTaskEntity {
     private String taskType;
 
     @Column(name = "payload", nullable = false, columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String payload;
 
-    @Column(name = "status", nullable = false)
-    private Integer status;
+    @Column(name = "status", nullable = false, columnDefinition = "smallint")
+    @Enumerated(EnumType.ORDINAL)
+    private TaskStatus status;
 
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount;
@@ -76,7 +80,7 @@ public class SysTaskEntity {
         entity.tenantId = task.tenantId();
         entity.taskType = task.taskType();
         entity.payload = task.payload();
-        entity.status = task.status().getCode();
+        entity.status = task.status();
         entity.retryCount = task.retryCount();
         entity.lastError = task.lastError();
         entity.createdBy = task.createdBy();
@@ -98,7 +102,7 @@ public class SysTaskEntity {
                 tenantId,
                 taskType,
                 payload,
-                TaskStatus.fromCode(status),
+                status,
                 retryCount,
                 lastError,
                 createdBy,
@@ -122,7 +126,7 @@ public class SysTaskEntity {
         this.tenantId = task.tenantId();
         this.taskType = task.taskType();
         this.payload = task.payload();
-        this.status = task.status().getCode();
+        this.status = task.status();
         this.retryCount = task.retryCount();
         this.lastError = task.lastError();
         this.createdBy = task.createdBy();

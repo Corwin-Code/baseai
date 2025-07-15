@@ -7,12 +7,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
@@ -44,8 +42,6 @@ import java.util.function.Consumer;
  * <p>3. <strong>功能互补：</strong>不同模型在不同任务上各有优势</p>
  * <p>4. <strong>风险缓解：</strong>单个服务故障不会影响整体系统</p>
  */
-@Service
-@ConditionalOnProperty(name = "baseai.llm.claude.enabled", havingValue = "true", matchIfMissing = false)
 public class ClaudeChatCompletionService implements ChatCompletionService {
 
     private static final Logger log = LoggerFactory.getLogger(ClaudeChatCompletionService.class);

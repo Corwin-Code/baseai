@@ -7,13 +7,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
-import org.springframework.stereotype.Service;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestTemplate;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -32,7 +37,6 @@ import java.util.stream.Collectors;
  * <li><b>性能监控：</b>记录响应时间和成功率等关键指标</li>
  * </ul>
  */
-@Service
 public class OpenAIChatCompletionService implements ChatCompletionService {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatCompletionService.class);
@@ -359,7 +363,8 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
             double inputPrice,   // 每1000个输入token的价格(USD)
             double outputPrice,  // 每1000个输出token的价格(USD)
             int maxTokens       // 最大支持的token数
-    ) {}
+    ) {
+    }
 
     /**
      * OpenAI API请求对象
@@ -372,7 +377,8 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
             Boolean stream,
             List<OpenAITool> tools,
             @JsonProperty("tool_choice") Object toolChoice
-    ) {}
+    ) {
+    }
 
     /**
      * OpenAI消息对象
@@ -380,7 +386,8 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
     private record OpenAIMessage(
             String role,
             String content
-    ) {}
+    ) {
+    }
 
     /**
      * OpenAI工具对象
@@ -393,7 +400,8 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
                 String name,
                 String description,
                 Map<String, Object> parameters
-        ) {}
+        ) {
+        }
     }
 
     /**
@@ -411,7 +419,8 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
                 Integer index,
                 OpenAIMessage message,
                 @JsonProperty("finish_reason") String finishReason
-        ) {}
+        ) {
+        }
     }
 
     /**
@@ -421,5 +430,6 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
             @JsonProperty("prompt_tokens") Integer promptTokens,
             @JsonProperty("completion_tokens") Integer completionTokens,
             @JsonProperty("total_tokens") Integer totalTokens
-    ) {}
+    ) {
+    }
 }

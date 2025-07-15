@@ -611,9 +611,9 @@ public class FlowOrchestrationAppService {
     /**
      * 获取运行历史
      */
-    public PageResultDTO<FlowRunDTO> getRunHistory(Long definitionId, int page, int size, String status) {
+    public PageResultDTO<FlowRunDTO> getRunHistory(Long snapshotId, int page, int size, String status) {
         log.debug("获取运行历史: definitionId={}, page={}, size={}, status={}",
-                definitionId, page, size, status);
+                snapshotId, page, size, status);
 
         try {
             List<FlowRun> runs;
@@ -621,11 +621,11 @@ public class FlowOrchestrationAppService {
 
             if (status != null && !status.trim().isEmpty()) {
                 RunStatus runStatus = RunStatus.valueOf(status.toUpperCase());
-                runs = runRepo.findByDefinitionIdAndStatus(definitionId, runStatus, page, size);
-                total = runRepo.countByDefinitionIdAndStatus(definitionId, runStatus);
+                runs = runRepo.findBySnapshotIdAndStatus(snapshotId, runStatus, page, size);
+                total = runRepo.countBySnapshotIdAndStatus(snapshotId, runStatus);
             } else {
-                runs = runRepo.findByDefinitionId(definitionId, page, size);
-                total = runRepo.countByDefinitionId(definitionId);
+                runs = runRepo.findBySnapshotId(snapshotId, page, size);
+                total = runRepo.countBySnapshotId(snapshotId);
             }
 
             List<FlowRunDTO> runDTOs = runs.stream()

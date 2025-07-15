@@ -4,6 +4,8 @@ import com.clinflash.baseai.domain.flow.model.FlowSnapshot;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -44,7 +46,8 @@ public class FlowSnapshotEntity {
     /**
      * 快照JSON内容
      */
-    @Column(name = "snapshot_json", nullable = false, columnDefinition = "LONGTEXT")
+    @Column(name = "snapshot_json", nullable = false, columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String snapshotJson;
 
     /**

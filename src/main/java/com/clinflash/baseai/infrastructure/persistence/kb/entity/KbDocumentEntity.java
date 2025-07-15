@@ -53,8 +53,9 @@ public class KbDocumentEntity {
     @Column(name = "lang_code", length = 5)
     private String langCode;
 
-    @Column(name = "parsing_status", nullable = false)
-    private Integer parsingStatus;
+    @Column(name = "parsing_status", nullable = false, columnDefinition = "smallint")
+    @Enumerated(EnumType.ORDINAL)
+    private ParsingStatus parsingStatus;
 
     @Column(name = "chunk_count")
     private Integer chunkCount;
@@ -79,10 +80,6 @@ public class KbDocumentEntity {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
-    // 版本号用于乐观锁
-    @Version
-    private Long version;
-
     /**
      * 默认构造函数（JPA要求）
      */
@@ -93,7 +90,7 @@ public class KbDocumentEntity {
      * 构造函数
      */
     public KbDocumentEntity(Long tenantId, String title, String sourceType, String sourceUri,
-                            String mimeType, String langCode, Integer parsingStatus,
+                            String mimeType, String langCode, ParsingStatus parsingStatus,
                             Integer chunkCount, String sha256, Long createdBy) {
         this.tenantId = tenantId;
         this.title = title;
@@ -123,7 +120,7 @@ public class KbDocumentEntity {
                 this.sourceUri,
                 this.mimeType,
                 this.langCode,
-                ParsingStatus.fromCode(this.parsingStatus),
+                this.parsingStatus,
                 this.chunkCount,
                 this.sha256,
                 this.createdBy,
@@ -148,7 +145,7 @@ public class KbDocumentEntity {
                 domain.sourceUri(),
                 domain.mimeType(),
                 domain.langCode(),
-                domain.parsingStatus().getCode(),
+                domain.parsingStatus(),
                 domain.chunkCount(),
                 domain.sha256(),
                 domain.createdBy()
@@ -172,7 +169,7 @@ public class KbDocumentEntity {
         this.sourceUri = domain.sourceUri();
         this.mimeType = domain.mimeType();
         this.langCode = domain.langCode();
-        this.parsingStatus = domain.parsingStatus().getCode();
+        this.parsingStatus = domain.parsingStatus();
         this.chunkCount = domain.chunkCount();
         this.updatedBy = domain.updatedBy();
         this.deletedAt = domain.deletedAt();

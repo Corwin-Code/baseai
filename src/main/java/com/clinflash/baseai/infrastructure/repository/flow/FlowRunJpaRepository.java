@@ -54,28 +54,28 @@ public class FlowRunJpaRepository implements FlowRunRepository {
     }
 
     @Override
-    public List<FlowRun> findByDefinitionId(Long definitionId, int page, int size) {
+    public List<FlowRun> findBySnapshotId(Long snapshotId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "startedAt"));
-        Page<FlowRunEntity> entityPage = springRepo.findByDefinitionIdAndDeletedAtIsNull(definitionId, pageable);
+        Page<FlowRunEntity> entityPage = springRepo.findBySnapshotIdAndDeletedAtIsNull(snapshotId, pageable);
         return mapper.toRunDomainList(entityPage.getContent());
     }
 
     @Override
-    public long countByDefinitionId(Long definitionId) {
-        return springRepo.countByDefinitionIdAndDeletedAtIsNull(definitionId);
+    public long countBySnapshotId(Long snapshotId) {
+        return springRepo.countBySnapshotIdAndDeletedAtIsNull(snapshotId);
     }
 
     @Override
-    public List<FlowRun> findByDefinitionIdAndStatus(Long definitionId, RunStatus status, int page, int size) {
+    public List<FlowRun> findBySnapshotIdAndStatus(Long snapshotId, RunStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "startedAt"));
-        Page<FlowRunEntity> entityPage = springRepo.findByDefinitionIdAndStatusAndDeletedAtIsNull(
-                definitionId, status.getCode(), pageable);
+        Page<FlowRunEntity> entityPage = springRepo.findBySnapshotIdAndStatusAndDeletedAtIsNull(
+                snapshotId, status, pageable);
         return mapper.toRunDomainList(entityPage.getContent());
     }
 
     @Override
-    public long countByDefinitionIdAndStatus(Long definitionId, RunStatus status) {
-        return springRepo.countByDefinitionIdAndStatusAndDeletedAtIsNull(definitionId, status.getCode());
+    public long countBySnapshotIdAndStatus(Long snapshotId, RunStatus status) {
+        return springRepo.countBySnapshotIdAndStatusAndDeletedAtIsNull(snapshotId, status);
     }
 
     @Override

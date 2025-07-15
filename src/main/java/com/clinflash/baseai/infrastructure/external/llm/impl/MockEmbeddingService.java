@@ -25,8 +25,6 @@ import java.util.stream.Collectors;
  * <li><b>成本控制：</b>向量生成通常按token收费，需要监控成本</li>
  * </ul>
  */
-@Service
-@ConditionalOnProperty(name = "kb.embedding.provider", havingValue = "mock", matchIfMissing = true)
 public class MockEmbeddingService implements EmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(MockEmbeddingService.class);

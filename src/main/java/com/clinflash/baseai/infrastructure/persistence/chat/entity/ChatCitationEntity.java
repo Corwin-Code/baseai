@@ -27,7 +27,7 @@ public class ChatCitationEntity {
     @Column(name = "model_code", length = 32)
     private String modelCode;
 
-    @Column(name = "score", precision = 6, scale = 4)
+    @Column(name = "score")
     private Float score;
 
     /**

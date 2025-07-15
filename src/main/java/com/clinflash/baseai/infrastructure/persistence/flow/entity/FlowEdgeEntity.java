@@ -4,6 +4,8 @@ import com.clinflash.baseai.domain.flow.model.FlowEdge;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 
@@ -29,7 +31,8 @@ public class FlowEdgeEntity {
     @Column(name = "target_key", nullable = false, length = 64)
     private String targetKey;
 
-    @Column(name = "config_json", columnDefinition = "TEXT")
+    @Column(name = "config_json", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String configJson;
 
     @Column(name = "created_by")

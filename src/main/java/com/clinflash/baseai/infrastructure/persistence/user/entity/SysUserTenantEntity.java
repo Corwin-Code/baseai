@@ -1,5 +1,7 @@
 package com.clinflash.baseai.infrastructure.persistence.user.entity;
 
+import com.clinflash.baseai.domain.user.model.TenantMemberStatus;
+import com.clinflash.baseai.domain.user.model.UserTenant;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -31,8 +33,9 @@ public class SysUserTenantEntity {
     @Column(name = "role_id")
     private Long roleId;
 
-    @Column(name = "status", nullable = false)
-    private Integer status;
+    @Column(name = "status", nullable = false, columnDefinition = "smallint")
+    @Enumerated(EnumType.ORDINAL)
+    private TenantMemberStatus status;
 
     @CreationTimestamp
     @Column(name = "joined_at", nullable = false, updatable = false)
@@ -41,7 +44,7 @@ public class SysUserTenantEntity {
     protected SysUserTenantEntity() {
     }
 
-    public SysUserTenantEntity(Long userId, Long tenantId, Long roleId, Integer status) {
+    public SysUserTenantEntity(Long userId, Long tenantId, Long roleId, TenantMemberStatus status) {
         this.userId = userId;
         this.tenantId = tenantId;
         this.roleId = roleId;
@@ -51,12 +54,12 @@ public class SysUserTenantEntity {
     /**
      * 转换为领域对象
      */
-    public com.clinflash.baseai.domain.user.model.UserTenant toDomain() {
-        return new com.clinflash.baseai.domain.user.model.UserTenant(
+    public UserTenant toDomain() {
+        return new UserTenant(
                 this.userId,
                 this.tenantId,
                 this.roleId,
-                com.clinflash.baseai.domain.user.model.TenantMemberStatus.fromCode(this.status),
+                this.status,
                 this.joinedAt
         );
     }
@@ -64,12 +67,12 @@ public class SysUserTenantEntity {
     /**
      * 从领域对象创建JPA实体
      */
-    public static SysUserTenantEntity fromDomain(com.clinflash.baseai.domain.user.model.UserTenant domain) {
+    public static SysUserTenantEntity fromDomain(UserTenant domain) {
         SysUserTenantEntity entity = new SysUserTenantEntity(
                 domain.userId(),
                 domain.tenantId(),
                 domain.roleId(),
-                domain.status().getCode()
+                domain.status()
         );
         entity.joinedAt = domain.joinedAt();
         return entity;

@@ -65,7 +65,7 @@ public interface SpringFlowSnapshotRepo extends JpaRepository<FlowSnapshotEntity
     /**
      * 统计流程定义的有效快照数量
      */
-    long countByDeletedAtIsNull(Long definitionId);
+    long countByDeletedAtIsNull();
 
     /**
      * 软删除快照

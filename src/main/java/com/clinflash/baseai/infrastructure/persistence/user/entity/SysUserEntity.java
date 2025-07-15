@@ -60,10 +60,6 @@ public class SysUserEntity {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
-    // 版本号用于乐观锁
-    @Version
-    private Long version;
-
     /**
      * 默认构造函数（JPA要求）
      */

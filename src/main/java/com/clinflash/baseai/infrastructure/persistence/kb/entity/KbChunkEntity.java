@@ -40,6 +40,7 @@ public class KbChunkEntity {
     @Column(name = "token_size", nullable = false)
     private Integer tokenSize;
 
+    @Version
     @Column(name = "vector_version")
     private Integer vectorVersion;
 
@@ -59,9 +60,6 @@ public class KbChunkEntity {
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
-
-    @Version
-    private Long version;
 
     protected KbChunkEntity() {
     }

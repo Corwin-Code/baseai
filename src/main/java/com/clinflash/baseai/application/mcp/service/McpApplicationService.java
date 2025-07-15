@@ -13,6 +13,7 @@ import com.clinflash.baseai.domain.mcp.repository.ToolCallLogRepository;
 import com.clinflash.baseai.domain.mcp.repository.ToolRepository;
 import com.clinflash.baseai.domain.mcp.service.ToolExecutionService;
 import com.clinflash.baseai.infrastructure.exception.McpException;
+import com.clinflash.baseai.infrastructure.persistence.mcp.entity.enums.ToolCallStatus;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -472,7 +473,7 @@ public class McpApplicationService {
             } catch (Exception e) {
                 log.error("异步工具执行失败: toolCode={}, logId={}", tool.code(), callLog.id(), e);
                 // 更新调用日志状态
-                updateCallLogStatus(callLog.id(), "FAILED", null, e.getMessage());
+                updateCallLogStatus(callLog.id(), ToolCallStatus.FAILED, null, e.getMessage());
             }
         }, asyncExecutor);
     }
@@ -490,7 +491,7 @@ public class McpApplicationService {
 
             // 更新调用日志
             long duration = System.currentTimeMillis() - startTime;
-            updateCallLogStatus(callLog.id(), "SUCCESS", result, null);
+            updateCallLogStatus(callLog.id(), ToolCallStatus.SUCCESS, result, null);
 
             return new ToolExecutionResultDTO(
                     callLog.id(),
@@ -503,7 +504,7 @@ public class McpApplicationService {
         } catch (Exception e) {
             log.error("工具执行失败: toolCode={}", tool.code(), e);
             long duration = System.currentTimeMillis() - startTime;
-            updateCallLogStatus(callLog.id(), "FAILED", null, e.getMessage());
+            updateCallLogStatus(callLog.id(), ToolCallStatus.FAILED, null, e.getMessage());
 
             return new ToolExecutionResultDTO(
                     callLog.id(),
@@ -515,7 +516,7 @@ public class McpApplicationService {
         }
     }
 
-    private void updateCallLogStatus(Long logId, String status, Map<String, Object> result, String errorMsg) {
+    private void updateCallLogStatus(Long logId, ToolCallStatus status, Map<String, Object> result, String errorMsg) {
         try {
             ToolCallLog log = toolCallLogRepo.findById(logId).orElse(null);
             if (log != null) {

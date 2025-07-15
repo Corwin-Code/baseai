@@ -5,6 +5,7 @@ import com.clinflash.baseai.domain.mcp.model.ToolAuth;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -26,7 +27,7 @@ public class HttpToolExecutionService implements ToolExecutionService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
-    public HttpToolExecutionService(RestTemplate restTemplate, ObjectMapper objectMapper) {
+    public HttpToolExecutionService(@Qualifier("mcpRestTemplate") RestTemplate restTemplate, ObjectMapper objectMapper) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
     }

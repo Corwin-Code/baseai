@@ -1,5 +1,7 @@
 package com.clinflash.baseai.application.mcp.dto;
 
+import com.clinflash.baseai.infrastructure.persistence.mcp.entity.enums.ToolCallStatus;
+
 import java.time.OffsetDateTime;
 
 /**
@@ -40,7 +42,7 @@ public record ToolCallLogDTO(
         Long toolId,
         Long tenantId,
         Long userId,
-        String status,
+        ToolCallStatus status,
         Integer latencyMs,
         OffsetDateTime createdAt
 ) {

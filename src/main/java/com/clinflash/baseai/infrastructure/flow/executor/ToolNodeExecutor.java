@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
@@ -62,7 +63,7 @@ public class ToolNodeExecutor implements NodeExecutor {
      * <p>初始化工具节点执行器，配置HTTP客户端和脚本引擎。
      * 通过依赖注入获取MCP服务，支持可选依赖模式。</p>
      */
-    public ToolNodeExecutor(ObjectMapper objectMapper, RestTemplate restTemplate) {
+    public ToolNodeExecutor(ObjectMapper objectMapper, @Qualifier("mcpRestTemplate") RestTemplate restTemplate) {
         this.objectMapper = objectMapper;
         this.restTemplate = restTemplate;
 
