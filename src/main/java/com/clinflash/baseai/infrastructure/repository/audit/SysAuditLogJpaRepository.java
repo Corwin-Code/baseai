@@ -1,8 +1,8 @@
 package com.clinflash.baseai.infrastructure.repository.audit;
 
 import com.clinflash.baseai.infrastructure.exception.AuditServiceException;
-import com.clinflash.baseai.infrastructure.external.audit.model.SysAuditLog;
-import com.clinflash.baseai.infrastructure.external.audit.repository.SysAuditLogRepository;
+import com.clinflash.baseai.domain.audit.model.SysAuditLog;
+import com.clinflash.baseai.domain.audit.repository.SysAuditLogRepository;
 import com.clinflash.baseai.infrastructure.persistence.audit.entity.SysAuditLogEntity;
 import com.clinflash.baseai.infrastructure.persistence.audit.mapper.AuditMapper;
 import com.clinflash.baseai.infrastructure.repository.audit.spring.SpringSysAuditLogRepo;

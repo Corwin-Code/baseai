@@ -1,8 +1,8 @@
 package com.clinflash.baseai.infrastructure.config;
 
 import com.clinflash.baseai.infrastructure.external.audit.repository.AuditLogRepository;
-import com.clinflash.baseai.infrastructure.external.audit.service.AuditService;
-import com.clinflash.baseai.infrastructure.external.audit.service.AuditServiceImpl;
+import com.clinflash.baseai.domain.audit.service.AuditService;
+import com.clinflash.baseai.domain.audit.service.AuditServiceImpl;
 import com.clinflash.baseai.infrastructure.external.email.EmailService;
 import com.clinflash.baseai.infrastructure.external.email.EmailServiceImpl;
 import com.clinflash.baseai.infrastructure.external.email.EmailTemplateEngine;

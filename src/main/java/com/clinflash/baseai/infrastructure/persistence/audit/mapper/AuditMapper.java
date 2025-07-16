@@ -1,6 +1,6 @@
 package com.clinflash.baseai.infrastructure.persistence.audit.mapper;
 
-import com.clinflash.baseai.infrastructure.external.audit.model.SysAuditLog;
+import com.clinflash.baseai.domain.audit.model.SysAuditLog;
 import com.clinflash.baseai.infrastructure.persistence.audit.entity.SysAuditLogEntity;
 import org.springframework.stereotype.Component;
 

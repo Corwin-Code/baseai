@@ -7,7 +7,7 @@ import com.clinflash.baseai.domain.user.repository.*;
 import com.clinflash.baseai.domain.user.service.UserDomainService;
 import com.clinflash.baseai.infrastructure.exception.UserBusinessException;
 import com.clinflash.baseai.infrastructure.exception.UserTechnicalException;
-import com.clinflash.baseai.infrastructure.external.audit.service.AuditService;
+import com.clinflash.baseai.domain.audit.service.AuditService;
 import com.clinflash.baseai.infrastructure.external.email.EmailService;
 import com.clinflash.baseai.infrastructure.external.sms.SmsService;
 import com.clinflash.baseai.infrastructure.utils.UserConstants;

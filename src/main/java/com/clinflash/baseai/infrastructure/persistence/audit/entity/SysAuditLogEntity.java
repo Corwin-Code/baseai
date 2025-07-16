@@ -1,6 +1,6 @@
 package com.clinflash.baseai.infrastructure.persistence.audit.entity;
 
-import com.clinflash.baseai.infrastructure.external.audit.model.SysAuditLog;
+import com.clinflash.baseai.domain.audit.model.SysAuditLog;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
