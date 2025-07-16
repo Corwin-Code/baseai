@@ -214,8 +214,8 @@ email:
 sms:
   # 服务商配置
   provider: ${SMS_PROVIDER:aliyun}
-  access-key: ${SMS_ACCESS_KEY}
-  access-secret: ${SMS_ACCESS_SECRET}
+  access-key: ${SMS_ACCESS_KEY:ACCESS_KEY}
+  access-secret: ${SMS_ACCESS_SECRET:ACCESS_SECRET}
   signature: ${SMS_SIGNATURE:BaseAI}
 
   # 发送限制配置

@@ -2,6 +2,7 @@ package com.clinflash.baseai.infrastructure.external.audit.service;
 
 import com.clinflash.baseai.infrastructure.exception.AuditServiceException;
 import com.clinflash.baseai.infrastructure.external.audit.model.dto.*;
+import lombok.Getter;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -40,9 +41,9 @@ public interface AuditService {
      * <p>建议在关键业务操作的前后都进行记录，形成完整的操作链路。
      * 同时，敏感操作（如权限变更、数据删除）应该记录更详细的信息。</p>
      *
-     * @param action 操作动作，如"USER_LOGIN"、"DATA_UPDATE"等，建议使用标准化的动作码
+     * @param action   操作动作，如"USER_LOGIN"、"DATA_UPDATE"等，建议使用标准化的动作码
      * @param targetId 操作目标ID，可以是用户ID、数据ID等，便于后续关联查询
-     * @param detail 操作详情，包含操作的具体描述和关键参数
+     * @param detail   操作详情，包含操作的具体描述和关键参数
      * @throws AuditServiceException 当记录失败时抛出，但不应该影响主业务流程
      */
     void recordUserAction(String action, Long targetId, String detail) throws Exception;
@@ -53,13 +54,13 @@ public interface AuditService {
      * <p>这个重载方法提供了更完整的参数，适用于需要记录详细上下文信息的场景。
      * 特别是在安全敏感的操作中，详细的上下文信息对后续的安全分析非常重要。</p>
      *
-     * @param userId 操作用户ID，用于标识操作主体
-     * @param action 操作动作代码
-     * @param targetType 目标类型，如"USER"、"TENANT"、"DOCUMENT"等
-     * @param targetId 目标对象ID
-     * @param detail 操作详情描述
-     * @param ipAddress 用户IP地址，用于地理位置分析和安全监控
-     * @param userAgent 用户代理字符串，包含浏览器和设备信息
+     * @param userId         操作用户ID，用于标识操作主体
+     * @param action         操作动作代码
+     * @param targetType     目标类型，如"USER"、"TENANT"、"DOCUMENT"等
+     * @param targetId       目标对象ID
+     * @param detail         操作详情描述
+     * @param ipAddress      用户IP地址，用于地理位置分析和安全监控
+     * @param userAgent      用户代理字符串，包含浏览器和设备信息
      * @param additionalData 额外的上下文数据，以键值对形式存储
      * @throws AuditServiceException 当记录失败时抛出
      */
@@ -74,11 +75,11 @@ public interface AuditService {
      * 系统状态变更、自动化流程等。这些事件虽然不是用户直接操作，
      * 但对系统运行状态的监控和问题诊断非常重要。</p>
      *
-     * @param eventType 事件类型，如"SYSTEM_STARTUP"、"SCHEDULED_TASK"等
+     * @param eventType   事件类型，如"SYSTEM_STARTUP"、"SCHEDULED_TASK"等
      * @param eventSource 事件源，标识产生事件的系统组件
      * @param description 事件描述，详细说明事件的内容和影响
-     * @param severity 事件严重程度，用于事件分级处理
-     * @param metadata 事件元数据，包含事件的详细参数和状态信息
+     * @param severity    事件严重程度，用于事件分级处理
+     * @param metadata    事件元数据，包含事件的详细参数和状态信息
      * @throws AuditServiceException 当记录失败时抛出
      */
     void recordSystemEvent(String eventType, String eventSource, String description,
@@ -91,10 +92,10 @@ public interface AuditService {
      * 这些记录对于安全分析、威胁检测和合规审查都具有重要价值。</p>
      *
      * @param securityEventType 安全事件类型，如"LOGIN_FAILED"、"PERMISSION_ESCALATION"
-     * @param userId 相关用户ID，可能为null（如匿名攻击）
-     * @param description 事件描述，包含安全事件的详细信息
-     * @param riskLevel 风险等级，用于安全事件的优先级处理
-     * @param sourceIp 源IP地址，用于地理位置分析和威胁情报关联
+     * @param userId            相关用户ID，可能为null（如匿名攻击）
+     * @param description       事件描述，包含安全事件的详细信息
+     * @param riskLevel         风险等级，用于安全事件的优先级处理
+     * @param sourceIp          源IP地址，用于地理位置分析和威胁情报关联
      * @param affectedResources 受影响的资源列表，用于影响范围评估
      * @throws AuditServiceException 当记录失败时抛出
      */
@@ -109,10 +110,10 @@ public interface AuditService {
      * 合同签署、财务操作等。这类审计通常需要满足特定的合规要求。</p>
      *
      * @param businessOperation 业务操作类型，如"ORDER_CREATE"、"PAYMENT_PROCESS"
-     * @param operatorId 操作员ID
-     * @param businessObjectId 业务对象ID，如订单ID、合同ID等
-     * @param operationDetails 操作详情，包含业务操作的关键参数
-     * @param businessContext 业务上下文，如所属部门、项目等
+     * @param operatorId        操作员ID
+     * @param businessObjectId  业务对象ID，如订单ID、合同ID等
+     * @param operationDetails  操作详情，包含业务操作的关键参数
+     * @param businessContext   业务上下文，如所属部门、项目等
      * @throws AuditServiceException 当记录失败时抛出
      */
     void recordBusinessOperation(String businessOperation, Long operatorId,
@@ -141,12 +142,12 @@ public interface AuditService {
      * <p>由于审计数据量庞大，查询接口需要支持分页、索引优化、缓存等
      * 性能优化手段。同时要注意权限控制，确保用户只能查询有权限的数据。</p>
      *
-     * @param userId 用户ID，null表示查询所有用户
+     * @param userId    用户ID，null表示查询所有用户
      * @param startTime 开始时间，null表示不限制开始时间
-     * @param endTime 结束时间，null表示不限制结束时间
-     * @param actions 操作类型列表，null表示所有操作类型
-     * @param page 页码，从0开始
-     * @param size 页大小，建议不超过100
+     * @param endTime   结束时间，null表示不限制结束时间
+     * @param actions   操作类型列表，null表示所有操作类型
+     * @param page      页码，从0开始
+     * @param size      页大小，建议不超过100
      * @return 查询结果，包含审计记录和分页信息
      * @throws AuditServiceException 当查询失败时抛出
      */
@@ -159,13 +160,13 @@ public interface AuditService {
      * <p>专门用于安全事件的查询，支持按风险级别、事件类型、时间范围等
      * 条件进行筛选。安全团队可以使用这个接口进行威胁分析和安全审查。</p>
      *
-     * @param startTime 开始时间
-     * @param endTime 结束时间
+     * @param startTime  开始时间
+     * @param endTime    结束时间
      * @param riskLevels 风险级别列表，用于筛选特定级别的安全事件
      * @param eventTypes 事件类型列表
-     * @param sourceIp 源IP地址，用于查询特定IP的安全事件
-     * @param page 页码
-     * @param size 页大小
+     * @param sourceIp   源IP地址，用于查询特定IP的安全事件
+     * @param page       页码
+     * @param size       页大小
      * @return 安全事件查询结果
      * @throws AuditServiceException 当查询失败时抛出
      */
@@ -179,7 +180,7 @@ public interface AuditService {
      * <p>根据指定的条件和模板生成审计报告，用于合规检查、安全分析等目的。
      * 报告可以是PDF、Excel等多种格式，支持定制化的报告模板。</p>
      *
-     * @param reportType 报告类型，如"COMPLIANCE_REPORT"、"SECURITY_SUMMARY"
+     * @param reportType   报告类型，如"COMPLIANCE_REPORT"、"SECURITY_SUMMARY"
      * @param reportParams 报告参数，包含时间范围、筛选条件等
      * @param outputFormat 输出格式，如"PDF"、"EXCEL"、"JSON"
      * @return 报告生成结果，包含报告ID和下载链接
@@ -195,8 +196,8 @@ public interface AuditService {
      * 这些统计信息对于系统监控和业务分析很有价值。</p>
      *
      * @param statisticsType 统计类型，如"USER_ACTIVITY"、"OPERATION_FREQUENCY"
-     * @param timeRange 时间范围，如"LAST_7_DAYS"、"LAST_MONTH"
-     * @param filters 过滤条件，用于细化统计范围
+     * @param timeRange      时间范围，如"LAST_7_DAYS"、"LAST_MONTH"
+     * @param filters        过滤条件，用于细化统计范围
      * @return 统计结果，包含各种维度的统计数据
      * @throws AuditServiceException 当统计计算失败时抛出
      */
@@ -221,7 +222,7 @@ public interface AuditService {
      * 这是满足某些合规要求的重要功能。</p>
      *
      * @param startTime 验证开始时间
-     * @param endTime 验证结束时间
+     * @param endTime   验证结束时间
      * @return 完整性验证结果，包含验证状态和详细信息
      * @throws AuditServiceException 当验证失败时抛出
      */
@@ -232,6 +233,7 @@ public interface AuditService {
     /**
      * 事件严重程度枚举
      */
+    @Getter
     enum EventSeverity {
         LOW("低"),
         MEDIUM("中"),
@@ -243,13 +245,12 @@ public interface AuditService {
         EventSeverity(String description) {
             this.description = description;
         }
-
-        public String getDescription() { return description; }
     }
 
     /**
      * 风险级别枚举
      */
+    @Getter
     enum RiskLevel {
         MINIMAL("极低"),
         LOW("低"),
@@ -262,53 +263,18 @@ public interface AuditService {
         RiskLevel(String description) {
             this.description = description;
         }
-
-        public String getDescription() { return description; }
     }
 
     /**
      * 审计事件数据结构
+     *
+     * @param eventType Getters
      */
-    class AuditEvent {
-        private final String eventType;
-        private final Long userId;
-        private final String action;
-        private final String targetType;
-        private final Long targetId;
-        private final String description;
-        private final OffsetDateTime timestamp;
-        private final String ipAddress;
-        private final String userAgent;
-        private final Map<String, Object> metadata;
+    record AuditEvent(String eventType, Long userId, String action, String targetType, Long targetId,
+                      String description, OffsetDateTime timestamp, String ipAddress, String userAgent,
+                      Map<String, Object> metadata) {
 
-        public AuditEvent(String eventType, Long userId, String action, String targetType,
-                          Long targetId, String description, OffsetDateTime timestamp,
-                          String ipAddress, String userAgent, Map<String, Object> metadata) {
-            this.eventType = eventType;
-            this.userId = userId;
-            this.action = action;
-            this.targetType = targetType;
-            this.targetId = targetId;
-            this.description = description;
-            this.timestamp = timestamp;
-            this.ipAddress = ipAddress;
-            this.userAgent = userAgent;
-            this.metadata = metadata;
-        }
-
-        // Getters
-        public String getEventType() { return eventType; }
-        public Long getUserId() { return userId; }
-        public String getAction() { return action; }
-        public String getTargetType() { return targetType; }
-        public Long getTargetId() { return targetId; }
-        public String getDescription() { return description; }
-        public OffsetDateTime getTimestamp() { return timestamp; }
-        public String getIpAddress() { return ipAddress; }
-        public String getUserAgent() { return userAgent; }
-        public Map<String, Object> getMetadata() { return metadata; }
     }
-
 
 
 }

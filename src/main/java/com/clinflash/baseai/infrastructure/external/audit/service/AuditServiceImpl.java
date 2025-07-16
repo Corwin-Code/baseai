@@ -4,6 +4,7 @@ import com.clinflash.baseai.infrastructure.exception.AuditServiceException;
 import com.clinflash.baseai.infrastructure.external.audit.model.AuditLogEntity;
 import com.clinflash.baseai.infrastructure.external.audit.model.dto.*;
 import com.clinflash.baseai.infrastructure.external.audit.repository.AuditLogRepository;
+import com.clinflash.baseai.infrastructure.persistence.audit.entity.SysAuditLogEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -354,7 +355,7 @@ public class AuditServiceImpl implements AuditService {
         try {
             // 按类型分组处理，提高效率
             Map<String, List<AuditEvent>> eventsByType = auditEvents.stream()
-                    .collect(Collectors.groupingBy(AuditEvent::getEventType));
+                    .collect(Collectors.groupingBy(AuditEvent::eventType));
 
             for (Map.Entry<String, List<AuditEvent>> entry : eventsByType.entrySet()) {
                 String eventType = entry.getKey();
@@ -771,19 +772,19 @@ public class AuditServiceImpl implements AuditService {
     private AuditLogEntity convertToEntity(AuditEvent event) {
         try {
             AuditLogEntity entity = new AuditLogEntity();
-            entity.setEventType(event.getEventType());
-            entity.setUserId(event.getUserId());
-            entity.setAction(event.getAction());
-            entity.setTargetType(event.getTargetType());
-            entity.setTargetId(event.getTargetId());
-            entity.setDescription(event.getDescription());
-            entity.setTimestamp(event.getTimestamp());
-            entity.setIpAddress(event.getIpAddress());
-            entity.setUserAgent(event.getUserAgent());
+            entity.setEventType(event.eventType());
+            entity.setUserId(event.userId());
+            entity.setAction(event.action());
+            entity.setTargetType(event.targetType());
+            entity.setTargetId(event.targetId());
+            entity.setDescription(event.description());
+            entity.setTimestamp(event.timestamp());
+            entity.setIpAddress(event.ipAddress());
+            entity.setUserAgent(event.userAgent());
 
             // 序列化元数据
-            if (event.getMetadata() != null) {
-                entity.setMetadata(objectMapper.writeValueAsString(event.getMetadata()));
+            if (event.metadata() != null) {
+                entity.setMetadata(objectMapper.writeValueAsString(event.metadata()));
             }
 
             // 生成完整性哈希
@@ -806,7 +807,7 @@ public class AuditServiceImpl implements AuditService {
      */
     private void saveAuditEventToElasticsearch(AuditEvent event) {
         try {
-            String indexName = generateIndexName(event.getTimestamp());
+            String indexName = generateIndexName(event.timestamp());
 
             Map<String, Object> document = convertToEsDocument(event);
 
@@ -826,7 +827,7 @@ public class AuditServiceImpl implements AuditService {
             // 按索引分组
             Map<String, List<Map<String, Object>>> documentsByIndex = events.stream()
                     .collect(Collectors.groupingBy(
-                            event -> generateIndexName(event.getTimestamp()),
+                            event -> generateIndexName(event.timestamp()),
                             Collectors.mapping(this::convertToEsDocument, Collectors.toList())
                     ));
 
@@ -851,18 +852,18 @@ public class AuditServiceImpl implements AuditService {
      */
     private Map<String, Object> convertToEsDocument(AuditEvent event) {
         Map<String, Object> document = new HashMap<>();
-        document.put("eventType", event.getEventType());
-        document.put("userId", event.getUserId());
-        document.put("action", event.getAction());
-        document.put("targetType", event.getTargetType());
-        document.put("targetId", event.getTargetId());
-        document.put("description", event.getDescription());
-        document.put("timestamp", event.getTimestamp());
-        document.put("ipAddress", event.getIpAddress());
-        document.put("userAgent", event.getUserAgent());
+        document.put("eventType", event.eventType());
+        document.put("userId", event.userId());
+        document.put("action", event.action());
+        document.put("targetType", event.targetType());
+        document.put("targetId", event.targetId());
+        document.put("description", event.description());
+        document.put("timestamp", event.timestamp());
+        document.put("ipAddress", event.ipAddress());
+        document.put("userAgent", event.userAgent());
 
-        if (event.getMetadata() != null) {
-            document.putAll(event.getMetadata());
+        if (event.metadata() != null) {
+            document.putAll(event.metadata());
         }
 
         return document;
@@ -922,7 +923,7 @@ public class AuditServiceImpl implements AuditService {
                                                           int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
 
-        Page<AuditLogEntity> entityPage = auditLogRepository.findUserActions(
+        Page<SysAuditLogEntity> entityPage = auditLogRepository.findUserActions(
                 userId, startTime, endTime, actions, pageable);
 
         List<AuditEvent> events = entityPage.getContent().stream()
@@ -1087,7 +1088,7 @@ public class AuditServiceImpl implements AuditService {
     }
 
     private void processHighRiskEvent(AuditEvent event) {
-        log.warn("处理高风险事件: {}", event.getAction());
+        log.warn("处理高风险事件: {}", event.action());
     }
 
     private boolean isComplianceRequired(String operation) {
