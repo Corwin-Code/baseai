@@ -1,10 +1,9 @@
 package com.clinflash.baseai.domain.audit.service;
 
-import com.clinflash.baseai.domain.audit.model.dto.*;
-import com.clinflash.baseai.infrastructure.exception.AuditServiceException;
 import com.clinflash.baseai.domain.audit.model.SysAuditLog;
-import com.clinflash.baseai.infrastructure.external.audit.model.dto.*;
+import com.clinflash.baseai.domain.audit.model.dto.*;
 import com.clinflash.baseai.domain.audit.repository.SysAuditLogRepository;
+import com.clinflash.baseai.infrastructure.exception.AuditServiceException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -14,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,6 +66,7 @@ public class AuditServiceImpl implements AuditService {
     // 核心依赖
     private final SysAuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;
+    private final ElasticsearchOperations elasticsearchOps;
 
     // 异步处理组件
     private final ExecutorService auditExecutor;
@@ -101,12 +102,13 @@ public class AuditServiceImpl implements AuditService {
      * <p>在构造函数中，我们建立了一个完整的异步处理体系。这就像建设一个
      * 现代化的工厂生产线，每个环节都经过精心设计，确保高效、可靠的运行。</p>
      */
-    public AuditServiceImpl(SysAuditLogRepository auditLogRepository, ObjectMapper objectMapper) {
+    public AuditServiceImpl(SysAuditLogRepository auditLogRepository, ElasticsearchOperations elasticsearchOps, ObjectMapper objectMapper) {
         Assert.notNull(auditLogRepository, "审计日志仓储不能为null");
         Assert.notNull(objectMapper, "JSON映射器不能为null");
 
         this.auditLogRepository = auditLogRepository;
         this.objectMapper = objectMapper;
+        this.elasticsearchOps = elasticsearchOps;
 
         // 创建专门的审计处理线程池
         this.auditExecutor = Executors.newFixedThreadPool(

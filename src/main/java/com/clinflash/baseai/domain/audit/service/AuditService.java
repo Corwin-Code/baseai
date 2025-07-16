@@ -2,7 +2,6 @@ package com.clinflash.baseai.domain.audit.service;
 
 import com.clinflash.baseai.domain.audit.model.dto.*;
 import com.clinflash.baseai.infrastructure.exception.AuditServiceException;
-import com.clinflash.baseai.infrastructure.external.audit.model.dto.*;
 import lombok.Getter;
 
 import java.time.OffsetDateTime;

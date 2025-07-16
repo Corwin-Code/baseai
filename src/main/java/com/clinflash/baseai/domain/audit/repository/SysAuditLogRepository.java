@@ -19,6 +19,11 @@ public interface SysAuditLogRepository {
     SysAuditLog save(SysAuditLog log);
 
     /**
+     * 批量保存审计日志
+     */
+    List<SysAuditLog> saveAll(List<SysAuditLog> logs);
+
+    /**
      * 根据日志ID查找日志
      */
     Optional<SysAuditLog> findById(Long id);
@@ -32,6 +37,11 @@ public interface SysAuditLogRepository {
      * 根据租户ID查询审计日志
      */
     Page<SysAuditLog> findByTenantIdOrderByCreatedAtDesc(Long tenantId, Pageable pageable);
+
+    /**
+     * 根据目标类型和目标ID查询审计日志
+     */
+    Page<SysAuditLog> findByTargetTypeAndTargetIdOrderByCreatedAtDesc(String targetType, Long targetId, Pageable pageable);
 
     /**
      * 根据时间范围查询审计日志

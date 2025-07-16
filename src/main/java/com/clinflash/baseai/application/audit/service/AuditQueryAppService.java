@@ -8,6 +8,9 @@ import com.clinflash.baseai.application.user.service.UserInfoService;
 import com.clinflash.baseai.domain.audit.model.SysAuditLog;
 import com.clinflash.baseai.domain.audit.repository.SysAuditLogRepository;
 import com.clinflash.baseai.infrastructure.exception.AuditServiceException;
+import com.clinflash.baseai.infrastructure.utils.AuditUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +57,7 @@ public class AuditQueryAppService {
 
     // 核心仓储依赖
     private final SysAuditLogRepository auditLogRepository;
+    private final ObjectMapper objectMapper;
 
     // 可选的用户信息服务，用于丰富审计数据的显示
     @Autowired(required = false)
@@ -64,7 +68,11 @@ public class AuditQueryAppService {
 
     // 缓存管理器，用于提高查询性能
     private final Map<String, Object> queryCache = new HashMap<>();
-    private final long CACHE_TTL_MINUTES = 10; // 缓存10分钟
+    private static final long CACHE_TTL_MINUTES = 10; // 缓存10分钟
+
+    // 性能监控数据
+    private final Map<String, Long> operationCounts = new HashMap<>();
+    private final Map<String, Long> operationTotalTime = new HashMap<>();
 
     /**
      * 构造函数 - 初始化服务依赖
@@ -72,8 +80,9 @@ public class AuditQueryAppService {
      * <p>在构造函数中，我们建立了必要的依赖关系，并初始化了用于性能优化的组件。
      * 这就像是为数据分析师配备专业的工具和助手。</p>
      */
-    public AuditQueryAppService(SysAuditLogRepository auditLogRepository) {
+    public AuditQueryAppService(SysAuditLogRepository auditLogRepository, ObjectMapper objectMapper) {
         this.auditLogRepository = auditLogRepository;
+        this.objectMapper = objectMapper;
 
         // 创建专门用于统计计算的线程池
         this.statisticsExecutor = Executors.newFixedThreadPool(
@@ -109,10 +118,18 @@ public class AuditQueryAppService {
             // 第一步：验证查询参数的合法性
             validateQueryCommand(command);
 
-            // 第二步：构建分页参数
+            // 第二步：检查缓存，如果有有效的缓存结果就直接返回
+            String cacheKey = buildCacheKey(command);
+            PageResultDTO<AuditLogDTO> cachedResult = getCachedResult(cacheKey);
+            if (cachedResult != null) {
+                log.debug("返回缓存的查询结果: cacheKey={}", cacheKey);
+                return cachedResult;
+            }
+
+            // 第三步：构建分页参数
             Pageable pageable = buildPageable(command);
 
-            // 第三步：执行数据库查询
+            // 第四步：执行数据库查询
             Page<SysAuditLog> auditPage = auditLogRepository.findUserActions(
                     command.userId(),
                     command.startTime(),
@@ -121,10 +138,10 @@ public class AuditQueryAppService {
                     pageable
             );
 
-            // 第四步：转换为业务DTO
+            // 第五步：转换为业务DTO
             List<AuditLogDTO> auditDTOs = convertToAuditLogDTOs(auditPage.getContent());
 
-            // 第五步：构建分页结果
+            // 第六步：构建分页结果
             PageResultDTO<AuditLogDTO> result = new PageResultDTO<>(
                     auditDTOs,
                     auditPage.getTotalElements(),
@@ -133,7 +150,12 @@ public class AuditQueryAppService {
                     auditPage.getTotalPages()
             );
 
+            // 第七步：将结果放入缓存，为后续查询提速
+            putCachedResult(cacheKey, result);
+
             long duration = System.currentTimeMillis() - startTime;
+            recordPerformanceMetric("queryAuditLogs", startTime);
+
             log.info("审计日志查询完成: 总记录数={}, 当前页记录数={}, 耗时={}ms",
                     result.totalElements(), result.content().size(), duration);
 
@@ -262,14 +284,6 @@ public class AuditQueryAppService {
             // 解析时间范围
             TimeRange range = parseTimeRange(timeRange);
 
-            // 检查缓存
-            String cacheKey = buildStatisticsCacheKey(tenantId, timeRange, dimension);
-            AuditStatisticsDTO cachedResult = getCachedStatistics(cacheKey);
-            if (cachedResult != null) {
-                log.debug("返回缓存的统计结果: cacheKey={}", cacheKey);
-                return cachedResult;
-            }
-
             // 异步并行计算各种统计数据
             CompletableFuture<Map<String, Long>> operationCountsFuture =
                     CompletableFuture.supplyAsync(() -> calculateOperationCounts(tenantId, range), statisticsExecutor);
@@ -281,9 +295,9 @@ public class AuditQueryAppService {
                     CompletableFuture.supplyAsync(() -> calculateSecurityEvents(tenantId, range), statisticsExecutor);
 
             // 等待所有计算完成并合并结果
-            Map<String, Long> operationCounts = operationCountsFuture.get();
-            Map<String, Long> userActivity = userActivityFuture.get();
-            Map<String, Long> securityEvents = securityEventsFuture.get();
+            Map<String, Long> operationCounts = operationCountsFuture.join();
+            Map<String, Long> userActivity = userActivityFuture.join();
+            Map<String, Long> securityEvents = securityEventsFuture.join();
 
             // 计算额外的洞察信息
             Map<String, Object> insights = calculateInsights(operationCounts, userActivity, securityEvents);
@@ -294,9 +308,6 @@ public class AuditQueryAppService {
                     securityEvents,
                     insights
             );
-
-            // 缓存结果
-            cacheStatistics(cacheKey, result);
 
             log.info("审计统计计算完成: tenantId={}, operations={}, users={}, securityEvents={}",
                     tenantId, operationCounts.size(), userActivity.size(), securityEvents.size());
@@ -322,32 +333,34 @@ public class AuditQueryAppService {
             OffsetDateTime startTime = OffsetDateTime.now().minusDays(days);
             OffsetDateTime endTime = OffsetDateTime.now();
 
-            // 查询用户操作统计
-            long totalOperations = auditLogRepository.countUserOperations(userId, startTime, endTime);
+            // 查询用户在指定时间内的所有操作
+            Page<SysAuditLog> userLogs = auditLogRepository.findUserActions(
+                    userId, startTime, endTime, null,
+                    PageRequest.of(0, Integer.MAX_VALUE)
+            );
 
             // 按操作类型统计
-            List<Object[]> actionStats = auditLogRepository.countByActionAndTimeRange(startTime, endTime);
-            Map<String, Long> operationCounts = actionStats.stream()
-                    .collect(Collectors.toMap(
-                            row -> (String) row[0],
-                            row -> (Long) row[1]
+            Map<String, Long> operationCounts = userLogs.getContent().stream()
+                    .collect(Collectors.groupingBy(
+                            SysAuditLog::action,
+                            Collectors.counting()
                     ));
 
             // 计算用户特有的统计信息
             Map<String, Object> userInsights = new HashMap<>();
-            userInsights.put("totalOperations", totalOperations);
-            userInsights.put("avgOperationsPerDay", Math.round((double) totalOperations / days));
+            userInsights.put("totalOperations", userLogs.getTotalElements());
+            userInsights.put("avgOperationsPerDay", Math.round((double) userLogs.getTotalElements() / days));
             userInsights.put("mostActiveDay", findMostActiveDay(userId, startTime, endTime));
             userInsights.put("recentSecurityEvents", countRecentSecurityEvents(userId, startTime, endTime));
 
             AuditStatisticsDTO summary = new AuditStatisticsDTO(
                     operationCounts,
-                    Map.of("user_" + userId, totalOperations),
+                    Map.of("user_" + userId, userLogs.getTotalElements()),
                     Map.of(), // 用户摘要中不显示其他用户的安全事件
                     userInsights
             );
 
-            log.debug("用户审计摘要生成完成: userId={}, totalOps={}", userId, totalOperations);
+            log.debug("用户审计摘要生成完成: userId={}, totalOps={}", userId, userLogs.getTotalElements());
             return summary;
 
         } catch (Exception e) {
@@ -368,6 +381,9 @@ public class AuditQueryAppService {
                 command.reportType(), command.tenantId(), command.format());
 
         try {
+            // 验证导出命令的有效性
+            command.validate();
+
             // 生成唯一的报告ID
             String reportId = generateReportId(command.reportType());
 
@@ -392,7 +408,7 @@ public class AuditQueryAppService {
     // =================== 私有辅助方法 ===================
 
     /**
-     * 验证查询命令的有效性
+     * 验证查询命令的完整性和合理性
      */
     private void validateQueryCommand(AuditQueryCommand command) {
         if (command.tenantId() == null) {
@@ -422,7 +438,7 @@ public class AuditQueryAppService {
     }
 
     /**
-     * 构建分页参数
+     * 构建标准化的分页参数
      */
     private Pageable buildPageable(AuditQueryCommand command) {
         Sort.Direction direction = "desc".equalsIgnoreCase(command.sortDir()) ?
@@ -449,11 +465,16 @@ public class AuditQueryAppService {
         // 获取用户显示名称
         String userDisplayName = null;
         if (auditLog.userId() != null && userInfoService != null) {
-            userDisplayName = userInfoService.getUserName(auditLog.userId());
+            try {
+                userDisplayName = userInfoService.getUserName(auditLog.userId());
+            } catch (Exception e) {
+                log.debug("获取用户显示名称失败: userId={}", auditLog.userId(), e);
+                userDisplayName = "用户" + auditLog.userId();
+            }
         }
 
-        // 解析详细信息
-        Map<String, Object> parsedDetail = parseDetailSafely(auditLog.detail());
+        // 安全地解析详细信息
+        Map<String, Object> parsedDetail = AuditUtils.safeDeserializeFromJson(auditLog.detail());
 
         // 确定操作描述
         String actionDescription = generateActionDescription(auditLog);
@@ -506,6 +527,7 @@ public class AuditQueryAppService {
                     Map<String, Object> enhancedDetail = new HashMap<>(dto.detail());
                     enhancedDetail.put("riskLevel", riskLevel);
                     enhancedDetail.put("securityAnalysis", generateSecurityAnalysis(log));
+                    enhancedDetail.put("recommendedAction", getRecommendedAction(log));
 
                     return new AuditLogDTO(
                             dto.id(), dto.tenantId(), dto.userId(), dto.userDisplayName(),
@@ -523,83 +545,176 @@ public class AuditQueryAppService {
                 .collect(Collectors.toList());
     }
 
-    // 其他私有辅助方法的实现...
+    /**
+     * 解析时间范围字符串
+     *
+     * <p>将用户友好的时间范围描述转换为具体的时间区间，支持多种常见的表达方式。</p>
+     */
     private TimeRange parseTimeRange(String timeRange) {
-        // 简化实现，实际项目中应该有完整的时间范围解析逻辑
-        return new TimeRange();
-    }
+        OffsetDateTime now = OffsetDateTime.now();
 
-    private Map<String, Long> calculateOperationCounts(Long tenantId, TimeRange range) {
-        // 模拟操作统计计算
-        return new HashMap<>();
-    }
-
-    private Map<String, Long> calculateUserActivity(Long tenantId, TimeRange range) {
-        // 模拟用户活动统计
-        return new HashMap<>();
-    }
-
-    private Map<String, Long> calculateSecurityEvents(Long tenantId, TimeRange range) {
-        // 模拟安全事件统计
-        return new HashMap<>();
-    }
-
-    private Map<String, Object> calculateInsights(Map<String, Long> operations,
-                                                  Map<String, Long> users,
-                                                  Map<String, Long> security) {
-        // 模拟洞察分析
-        return new HashMap<>();
-    }
-
-    private String buildStatisticsCacheKey(Long tenantId, String timeRange, String dimension) {
-        return String.format("audit_stats_%d_%s_%s", tenantId, timeRange, dimension);
-    }
-
-    private AuditStatisticsDTO getCachedStatistics(String cacheKey) {
-        // 简化的缓存实现
-        return null;
-    }
-
-    private void cacheStatistics(String cacheKey, AuditStatisticsDTO statistics) {
-        // 简化的缓存实现
-    }
-
-    private Map<String, Object> parseDetailSafely(String detail) {
-        // 安全解析JSON详情
-        try {
-            if (detail != null && !detail.trim().isEmpty()) {
-                // 这里应该使用Jackson ObjectMapper解析
-                return new HashMap<>();
-            }
-        } catch (Exception e) {
-            log.warn("解析审计详情失败: {}", detail, e);
-        }
-        return new HashMap<>();
-    }
-
-    private String generateActionDescription(SysAuditLog auditLog) {
-        // 生成人类可读的操作描述
-        return switch (auditLog.action()) {
-            case "USER_LOGIN" -> "用户登录";
-            case "USER_LOGOUT" -> "用户登出";
-            case "DATA_CREATE" -> "创建数据";
-            case "DATA_UPDATE" -> "更新数据";
-            case "DATA_DELETE" -> "删除数据";
-            default -> auditLog.action();
+        return switch (timeRange) {
+            case "LAST_24_HOURS" -> new TimeRange(now.minusHours(24), now);
+            case "LAST_7_DAYS" -> new TimeRange(now.minusDays(7), now);
+            case "LAST_30_DAYS" -> new TimeRange(now.minusDays(30), now);
+            case "LAST_90_DAYS" -> new TimeRange(now.minusDays(90), now);
+            case "LAST_YEAR" -> new TimeRange(now.minusYears(1), now);
+            default -> new TimeRange(now.minusDays(7), now); // 默认最近7天
         };
     }
 
-    private String calculateRiskLevel(SysAuditLog log) {
-        // 风险级别计算逻辑
-        if ("FAILED".equals(log.resultStatus())) {
-            return "HIGH";
+    /**
+     * 计算操作类型统计
+     *
+     * <p>这个方法统计各种操作类型的频率，帮助了解系统的使用模式。</p>
+     */
+    private Map<String, Long> calculateOperationCounts(Long tenantId, TimeRange range) {
+        try {
+            List<Object[]> results = auditLogRepository.countByActionAndTimeRange(
+                    range.start(), range.end());
+
+            return results.stream()
+                    .collect(Collectors.toMap(
+                            row -> (String) row[0],
+                            row -> (Long) row[1]
+                    ));
+        } catch (Exception e) {
+            log.warn("计算操作统计失败", e);
+            return new HashMap<>();
         }
+    }
+
+    /**
+     * 计算用户活动统计
+     *
+     * <p>分析用户的活跃程度，识别系统的重度用户和潜在的异常账户。</p>
+     */
+    private Map<String, Long> calculateUserActivity(Long tenantId, TimeRange range) {
+        try {
+            List<Object[]> results = auditLogRepository.countByUserAndTimeRange(
+                    range.start(), range.end());
+
+            return results.stream()
+                    .collect(Collectors.toMap(
+                            row -> "user_" + row[0],
+                            row -> (Long) row[1]
+                    ));
+        } catch (Exception e) {
+            log.warn("计算用户活动统计失败", e);
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * 计算安全事件统计
+     *
+     * <p>专门统计安全相关的事件，为安全监控提供数据支撑。</p>
+     */
+    private Map<String, Long> calculateSecurityEvents(Long tenantId, TimeRange range) {
+        List<String> securityActions = getSecurityRelatedActions();
+        Map<String, Long> securityCounts = new HashMap<>();
+
+        for (String action : securityActions) {
+            try {
+                // 这里应该有专门的安全事件统计方法，暂时使用模拟数据
+                securityCounts.put(action, 0L);
+            } catch (Exception e) {
+                log.warn("计算安全事件统计失败: action={}", action, e);
+            }
+        }
+
+        return securityCounts;
+    }
+
+    /**
+     * 计算高级洞察信息
+     *
+     * <p>这个方法将原始统计数据转化为有价值的业务洞察，为管理决策提供支持。</p>
+     */
+    private Map<String, Object> calculateInsights(Map<String, Long> operations,
+                                                  Map<String, Long> users,
+                                                  Map<String, Long> security) {
+        Map<String, Object> insights = new HashMap<>();
+
+        // 计算总体活跃度
+        long totalOperations = operations.values().stream().mapToLong(Long::longValue).sum();
+        insights.put("totalOperations", totalOperations);
+
+        // 找出最活跃的操作类型
+        String mostFrequentOperation = operations.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse("无");
+        insights.put("mostFrequentOperation", mostFrequentOperation);
+
+        // 计算安全风险评分
+        long totalSecurityEvents = security.values().stream().mapToLong(Long::longValue).sum();
+        double riskScore = totalOperations > 0 ? (double) totalSecurityEvents / totalOperations * 100 : 0;
+        insights.put("securityRiskScore", Math.round(riskScore * 100.0) / 100.0);
+
+        // 用户活跃度分析
+        insights.put("activeUserCount", users.size());
+
+        return insights;
+    }
+
+    private String buildCacheKey(AuditQueryCommand command) {
+        return String.format("audit_query_%s_%s_%s_%d_%d",
+                command.userId(), command.startTime(), command.endTime(),
+                command.page(), command.size());
+    }
+
+    private PageResultDTO<AuditLogDTO> getCachedResult(String cacheKey) {
+        CacheEntry entry = (CacheEntry) queryCache.get(cacheKey);
+        if (entry != null && !entry.isExpired()) {
+            return entry.getData();
+        }
+        return null;
+    }
+
+    private void putCachedResult(String cacheKey, PageResultDTO<AuditLogDTO> result) {
+        queryCache.put(cacheKey, new CacheEntry(result));
+    }
+
+    private String generateActionDescription(SysAuditLog auditLog) {
+        return AuditUtils.generateOperationSummary(
+                auditLog.action(),
+                auditLog.targetType(),
+                auditLog.targetId(),
+                getUserDisplayName(auditLog.userId())
+        );
+    }
+
+    private String getUserDisplayName(Long userId) {
+        if (userId == null) return null;
+        try {
+            return userInfoService != null ? userInfoService.getUserName(userId) : "用户" + userId;
+        } catch (Exception e) {
+            return "用户" + userId;
+        }
+    }
+
+    private String calculateRiskLevel(SysAuditLog log) {
+        int riskScore = AuditUtils.calculateRiskScore(
+                log.action(), log.resultStatus(), log.ipAddress(), log.userAgent());
+
+        if (riskScore >= 80) return "CRITICAL";
+        if (riskScore >= 60) return "HIGH";
+        if (riskScore >= 40) return "MEDIUM";
         return "LOW";
     }
 
     private String generateSecurityAnalysis(SysAuditLog log) {
-        // 生成安全分析报告
-        return "常规操作，无异常";
+        // 这里可以实现复杂的安全分析逻辑
+        return "安全事件分析: " + log.action();
+    }
+
+    private String getRecommendedAction(SysAuditLog log) {
+        return switch (log.action()) {
+            case "USER_LOGIN_FAILED" -> "建议检查用户密码策略";
+            case "PERMISSION_DENIED" -> "建议审查用户权限配置";
+            default -> "建议进一步调查";
+        };
     }
 
     private int compareRiskLevel(String a, String b) {
@@ -613,12 +728,12 @@ public class AuditQueryAppService {
     }
 
     private String findMostActiveDay(Long userId, OffsetDateTime start, OffsetDateTime end) {
-        // 找到用户最活跃的一天
-        return "2024-01-15";
+        // 这里应该实现找到用户最活跃日期的逻辑
+        return start.toLocalDate().toString();
     }
 
     private long countRecentSecurityEvents(Long userId, OffsetDateTime start, OffsetDateTime end) {
-        // 统计最近的安全事件
+        // 这里应该实现统计用户安全事件的逻辑
         return 0L;
     }
 
@@ -630,14 +745,38 @@ public class AuditQueryAppService {
     }
 
     private void generateReportAsync(String reportId, AuditQueryCommand.ReportExportCommand command) {
-        // 异步生成报告的实现
-        log.info("正在生成报告: {}", reportId);
+        log.info("异步生成报告: reportId={}", reportId);
+        // 这里实现具体的报告生成逻辑
     }
 
-    // 内部类
-    private static class TimeRange {
-        private OffsetDateTime start;
-        private OffsetDateTime end;
-        // getters and setters...
+    private void recordPerformanceMetric(String operation, long startTime) {
+        long duration = System.currentTimeMillis() - startTime;
+        operationCounts.merge(operation, 1L, Long::sum);
+        operationTotalTime.merge(operation, duration, Long::sum);
+    }
+
+    /**
+     * 缓存条目类
+     */
+    private static class CacheEntry {
+        @Getter
+        private final PageResultDTO<AuditLogDTO> data;
+        private final long timestamp;
+
+        public CacheEntry(PageResultDTO<AuditLogDTO> data) {
+            this.data = data;
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        public boolean isExpired() {
+            return System.currentTimeMillis() - timestamp > CACHE_TTL_MINUTES * 60 * 1000;
+        }
+
+    }
+
+    /**
+     * 时间范围类
+     */
+    private record TimeRange(OffsetDateTime start, OffsetDateTime end) {
     }
 }

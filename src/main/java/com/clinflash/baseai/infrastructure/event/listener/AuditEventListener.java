@@ -1,18 +1,19 @@
 package com.clinflash.baseai.infrastructure.event.listener;
 
 import com.clinflash.baseai.domain.audit.service.AuditService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.security.authentication.event.*;
+import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
+import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
 import org.springframework.security.authorization.event.AuthorizationDeniedEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -131,18 +132,18 @@ public class AuditEventListener {
     public void handleAuthorizationDenied(AuthorizationDeniedEvent<?> event) {
         try {
             String username = event.getAuthentication() != null ?
-                    event.getAuthentication().getName() : "anonymous";
+                    event.getAuthentication().get().getName() : "anonymous";
             String ipAddress = extractIpAddress();
 
             Map<String, Object> details = new HashMap<>();
             details.put("username", username);
             details.put("requestedResource", event.getAuthorizationDecision().toString());
             details.put("authorities", event.getAuthentication() != null ?
-                    event.getAuthentication().getAuthorities().toString() : "none");
+                    event.getAuthentication().get().getAuthorities().toString() : "none");
 
             auditService.recordSecurityEvent(
                     "AUTHORIZATION_DENIED",
-                    extractUserId(event.getAuthentication()),
+                    extractUserId(event.getAuthentication().get()),
                     "访问权限被拒绝: " + username,
                     AuditService.RiskLevel.LOW,
                     ipAddress,
@@ -327,8 +328,16 @@ public class AuditEventListener {
             this.lastAccessTime = lastAccessTime;
         }
 
-        public String getSessionId() { return sessionId; }
-        public long getTimeout() { return timeout; }
-        public long getLastAccessTime() { return lastAccessTime; }
+        public String getSessionId() {
+            return sessionId;
+        }
+
+        public long getTimeout() {
+            return timeout;
+        }
+
+        public long getLastAccessTime() {
+            return lastAccessTime;
+        }
     }
 }

@@ -474,6 +474,43 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
     }
 
     /**
+     * 根据目标类型和目标ID查询审计日志
+     *
+     * <p>这个方法用于查询针对特定对象的所有操作记录。
+     * 就像为每个重要文件建立操作档案，记录谁在什么时候对它做了什么操作。</p>
+     */
+    public Page<SysAuditLog> findByTargetTypeAndTargetIdOrderByCreatedAtDesc(
+            String targetType, Long targetId, Pageable pageable) {
+
+        Assert.hasText(targetType, "目标类型不能为空");
+        Assert.notNull(targetId, "目标ID不能为null");
+        Assert.notNull(pageable, "分页参数不能为null");
+
+        try {
+            logger.debug("查询对象操作历史: targetType={}, targetId={}, page={}, size={}",
+                    targetType, targetId, pageable.getPageNumber(), pageable.getPageSize());
+
+            validatePageable(pageable);
+
+            Page<SysAuditLogEntity> entityPage = springRepo
+                    .findByTargetTypeAndTargetIdOrderByCreatedAtDesc(targetType, targetId, pageable);
+
+            Page<SysAuditLog> domainPage = entityPage.map(mapper::toDomain);
+
+            logger.debug("对象操作历史查询完成: targetType={}, targetId={}, 总记录数={}",
+                    targetType, targetId, domainPage.getTotalElements());
+
+            return domainPage;
+
+        } catch (DataAccessException e) {
+            String errorMessage = String.format("查询对象操作历史失败: targetType=%s, targetId=%d",
+                    targetType, targetId);
+            logger.error(errorMessage, e);
+            throw AuditServiceException.technicalError("AUDIT_OBJECT_HISTORY_FAILED", errorMessage, e);
+        }
+    }
+
+    /**
      * 批量保存审计日志
      *
      * <p>这个方法提供批量保存功能，能够显著提高大量数据写入的性能。

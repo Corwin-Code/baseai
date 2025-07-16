@@ -25,6 +25,8 @@ import java.util.Optional;
 @Repository
 public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, Long> {
 
+    // =================== 核心查询方法 ===================
+
     /**
      * 根据用户ID和时间范围查询审计日志
      *
@@ -49,6 +51,7 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
      */
     @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
             "(:userId IS NULL OR a.userId = :userId) " +
+            "AND (:tenantId IS NULL OR a.tenantId = :tenantId) " +
             "AND (:startTime IS NULL OR a.createdAt >= :startTime) " +
             "AND (:endTime IS NULL OR a.createdAt <= :endTime) " +
             "AND (:actions IS NULL OR SIZE(:actions) = 0 OR a.action IN :actions) " +
@@ -60,6 +63,24 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
             @Param("actions") List<String> actions,
             Pageable pageable
     );
+
+    @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
+            "a.tenantId = :tenantId " +
+            "AND (:userId IS NULL OR a.userId = :userId) " +
+            "AND (:startTime IS NULL OR a.createdAt >= :startTime) " +
+            "AND (:endTime IS NULL OR a.createdAt <= :endTime) " +
+            "AND (:actions IS NULL OR SIZE(:actions) = 0 OR a.action IN :actions) " +
+            "ORDER BY a.createdAt DESC")
+    Page<SysAuditLogEntity> findUserActionsWithTenant(
+            @Param("tenantId") Long tenantId,
+            @Param("userId") Long userId,
+            @Param("startTime") OffsetDateTime startTime,
+            @Param("endTime") OffsetDateTime endTime,
+            @Param("actions") List<String> actions,
+            Pageable pageable
+    );
+
+    // =================== 租户相关查询 ===================
 
     /**
      * 根据租户ID查询审计日志，按创建时间倒序排列
@@ -76,6 +97,36 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
      * @return 分页的查询结果
      */
     Page<SysAuditLogEntity> findByTenantIdOrderByCreatedAtDesc(Long tenantId, Pageable pageable);
+
+    /**
+     * 根据操作类型和租户ID查询审计日志
+     *
+     * <p>这个方法提供了按操作类型过滤的查询功能。当我们需要专门分析
+     * 某种类型的操作时，这个方法会很有用。比如，专门查看登录操作、
+     * 数据修改操作等。</p>
+     *
+     * @param action   操作类型
+     * @param tenantId 租户ID
+     * @param pageable 分页参数
+     * @return 分页的查询结果
+     */
+    Page<SysAuditLogEntity> findByActionAndTenantIdOrderByCreatedAtDesc(
+            String action, Long tenantId, Pageable pageable);
+
+    /**
+     * 统计租户在指定时间范围内的审计日志数量
+     */
+    @Query("SELECT COUNT(a) FROM SysAuditLogEntity a WHERE " +
+            "a.tenantId = :tenantId " +
+            "AND a.createdAt >= :startTime " +
+            "AND a.createdAt <= :endTime")
+    long countByTenantAndTimeRange(
+            @Param("tenantId") Long tenantId,
+            @Param("startTime") OffsetDateTime startTime,
+            @Param("endTime") OffsetDateTime endTime
+    );
+
+    // =================== 时间范围查询 ===================
 
     /**
      * 根据时间范围查询审计日志
@@ -120,6 +171,8 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
             @Param("startTime") OffsetDateTime startTime,
             @Param("endTime") OffsetDateTime endTime
     );
+
+    // =================== 统计分析查询 ===================
 
     /**
      * 按操作类型统计审计日志数量
@@ -171,39 +224,23 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
     );
 
     /**
-     * 删除指定时间之前的审计日志
+     * 按租户和操作类型统计
      *
-     * <p>这个方法用于数据清理，删除过期的审计日志。这是一个危险的操作，
-     * 就像销毁过期文件一样，需要确保符合法规要求和公司政策。</p>
-     *
-     * <p><b>重要提醒：</b></p>
-     * <p>@Modifying注解表示这是一个修改操作，不是查询操作。
-     * 执行这种操作时需要特别小心，建议在删除前先备份数据。</p>
-     *
-     * <p><b>性能考虑：</b></p>
-     * <p>大批量删除可能影响数据库性能，建议在低峰期执行，
-     * 或者分批删除以减少对系统的影响。</p>
-     *
-     * @param cutoffTime 截止时间，在此时间之前的日志将被删除
+     * <p>这个统计方法结合了租户隔离和操作分析，为多租户环境下的
+     * 使用情况分析提供了精确的数据支撑。</p>
      */
-    @Modifying
-    @Query("DELETE FROM SysAuditLogEntity a WHERE a.createdAt < :cutoffTime")
-    void deleteOldAuditLogs(@Param("cutoffTime") OffsetDateTime cutoffTime);
+    @Query("SELECT a.action, COUNT(a) FROM SysAuditLogEntity a WHERE " +
+            "a.tenantId = :tenantId " +
+            "AND a.createdAt >= :startTime AND a.createdAt <= :endTime " +
+            "GROUP BY a.action " +
+            "ORDER BY COUNT(a) DESC")
+    List<Object[]> countByTenantAndActionAndTimeRange(
+            @Param("tenantId") Long tenantId,
+            @Param("startTime") OffsetDateTime startTime,
+            @Param("endTime") OffsetDateTime endTime
+    );
 
-    /**
-     * 根据操作类型和租户ID查询审计日志
-     *
-     * <p>这个方法提供了按操作类型过滤的查询功能。当我们需要专门分析
-     * 某种类型的操作时，这个方法会很有用。比如，专门查看登录操作、
-     * 数据修改操作等。</p>
-     *
-     * @param action   操作类型
-     * @param tenantId 租户ID
-     * @param pageable 分页参数
-     * @return 分页的查询结果
-     */
-    Page<SysAuditLogEntity> findByActionAndTenantIdOrderByCreatedAtDesc(
-            String action, Long tenantId, Pageable pageable);
+    // =================== 对象操作历史查询 ===================
 
     /**
      * 根据目标类型和目标ID查询审计日志
@@ -221,10 +258,27 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
             String targetType, Long targetId, Pageable pageable);
 
     /**
+     * 查询指定对象在特定时间范围内的操作历史
+     */
+    @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
+            "a.targetType = :targetType AND a.targetId = :targetId " +
+            "AND a.createdAt >= :startTime AND a.createdAt <= :endTime " +
+            "ORDER BY a.createdAt DESC")
+    Page<SysAuditLogEntity> findObjectHistoryInTimeRange(
+            @Param("targetType") String targetType,
+            @Param("targetId") Long targetId,
+            @Param("startTime") OffsetDateTime startTime,
+            @Param("endTime") OffsetDateTime endTime,
+            Pageable pageable
+    );
+
+    // =================== 安全相关查询 ===================
+
+    /**
      * 根据IP地址查询审计日志
      *
      * <p>这个方法用于安全分析，查看来自特定IP地址的所有操作。
-     * 当我们怀疑某个IP地址存在异常行为时，这个查询会很有帮助。</p>
+     * 当我们怀疑某个IP地址存在异常行为时，这个查询能够帮助我们追踪来自该IP的所有操作。</p>
      *
      * @param ipAddress IP地址
      * @param pageable  分页参数
@@ -277,6 +331,29 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
     );
 
     /**
+     * 查询可疑的安全活动
+     *
+     * <p>这个查询方法集成了多个安全指标，能够识别可能的安全威胁。
+     * 它就像一个智能的安全分析师，从大量数据中筛选出需要关注的事件。</p>
+     */
+    @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
+            "a.tenantId = :tenantId " +
+            "AND (" +
+            "   a.action IN ('USER_LOGIN_FAILED', 'PERMISSION_DENIED', 'AUTH_FAILURE') " +
+            "   OR a.resultStatus = 'FAILED' " +
+            "   OR a.logLevel IN ('WARN', 'ERROR') " +
+            ") " +
+            "AND a.createdAt >= :startTime " +
+            "ORDER BY a.createdAt DESC")
+    Page<SysAuditLogEntity> findSuspiciousActivities(
+            @Param("tenantId") Long tenantId,
+            @Param("startTime") OffsetDateTime startTime,
+            Pageable pageable
+    );
+
+    // =================== 用户相关查询 ===================
+
+    /**
      * 统计指定用户在指定时间范围内的操作次数
      *
      * <p>这个方法用于监控用户活动频率，可以帮助发现异常行为。
@@ -298,23 +375,88 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
     );
 
     /**
-     * 查询最近的审计日志
+     * 查询用户的最近操作
      *
-     * <p>这个方法用于快速查看系统的最新活动，类似于查看最新的新闻动态。
-     * 在系统监控和实时分析中很有用。</p>
-     *
-     * @param tenantId 租户ID
-     * @param limit    返回记录数量限制
-     * @return 最近的审计日志列表
+     * <p>这个方法快速展示用户的最新活动，就像查看最近的浏览历史一样。
+     * 它有助于了解用户的当前工作状态。</p>
      */
     @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
-            "a.tenantId = :tenantId " +
-            "ORDER BY a.createdAt DESC " +
-            "LIMIT :limit")
-    List<SysAuditLogEntity> findRecentLogs(
-            @Param("tenantId") Long tenantId,
-            @Param("limit") int limit
+            "a.userId = :userId " +
+            "ORDER BY a.createdAt DESC")
+    Page<SysAuditLogEntity> findUserRecentActions(
+            @Param("userId") Long userId,
+            Pageable pageable
     );
+
+    /**
+     * 查找指定用户的第一条审计日志
+     *
+     * <p>这个方法用于查找用户的首次操作记录，这在用户行为分析中很有价值。
+     * 比如，我们可以通过这个方法了解用户的首次登录时间。</p>
+     *
+     * @param userId 用户ID
+     * @return 用户的第一条审计日志，如果不存在则返回空Optional
+     */
+    Optional<SysAuditLogEntity> findFirstByUserIdOrderByCreatedAtAsc(Long userId);
+
+    /**
+     * 查找指定用户的最后一条审计日志
+     *
+     * <p>这个方法用于查找用户的最近操作记录，这在用户活跃度分析中很有用。</p>
+     *
+     * @param userId 用户ID
+     * @return 用户的最后一条审计日志，如果不存在则返回空Optional
+     */
+    Optional<SysAuditLogEntity> findFirstByUserIdOrderByCreatedAtDesc(Long userId);
+
+    // =================== 数据维护查询 ===================
+
+    /**
+     * 删除指定时间之前的审计日志
+     *
+     * <p>这个方法用于数据清理，删除过期的审计日志。这是一个危险的操作，
+     * 就像销毁过期文件一样，需要确保符合法规要求和公司政策。</p>
+     *
+     * <p><b>重要提醒：</b></p>
+     * <p>@Modifying注解表示这是一个修改操作，不是查询操作。
+     * 执行这种操作时需要特别小心，建议在删除前先备份数据。</p>
+     *
+     * <p><b>性能考虑：</b></p>
+     * <p>大批量删除可能影响数据库性能，建议在低峰期执行，
+     * 或者分批删除以减少对系统的影响。</p>
+     *
+     * @param cutoffTime 截止时间，在此时间之前的日志将被删除
+     */
+    @Modifying
+    @Query("DELETE FROM SysAuditLogEntity a WHERE a.createdAt < :cutoffTime")
+    void deleteOldAuditLogs(@Param("cutoffTime") OffsetDateTime cutoffTime);
+
+    /**
+     * 统计指定时间之前的审计日志数量
+     *
+     * <p>这个方法用于在执行数据清理前预估要删除的记录数量。
+     * 这样可以帮助我们评估清理操作的影响和所需时间。</p>
+     *
+     * @param cutoffTime 截止时间
+     * @return 要删除的记录数量
+     */
+    long countByCreatedAtBefore(OffsetDateTime cutoffTime);
+
+    /**
+     * 归档旧的审计日志
+     *
+     * <p>对于需要长期保存但不常访问的审计数据，我们可以将其标记为归档状态。
+     * 这样既满足了合规要求，又提高了常用数据的查询性能。</p>
+     */
+    @Modifying
+    @Query("UPDATE SysAuditLogEntity a SET a.createdAt = :archiveTime " +
+            "WHERE a.createdAt < :cutoffTime AND a.createdAt IS NULL")
+    int archiveOldAuditLogs(
+            @Param("cutoffTime") OffsetDateTime cutoffTime,
+            @Param("archiveTime") OffsetDateTime archiveTime
+    );
+
+    // =================== 搜索和过滤查询 ===================
 
     /**
      * 根据关键词搜索审计日志详情
@@ -333,7 +475,8 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
      */
     @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
             "a.tenantId = :tenantId " +
-            "AND (a.detail ILIKE %:keyword% OR a.action ILIKE %:keyword%) " +
+            "AND (LOWER(a.detail) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+            "OR LOWER(a.action) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
             "ORDER BY a.createdAt DESC")
     Page<SysAuditLogEntity> searchByKeyword(
             @Param("tenantId") Long tenantId,
@@ -360,16 +503,7 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
             Pageable pageable
     );
 
-    /**
-     * 统计指定时间之前的审计日志数量
-     *
-     * <p>这个方法用于在执行数据清理前预估要删除的记录数量。
-     * 这样可以帮助我们评估清理操作的影响和所需时间。</p>
-     *
-     * @param cutoffTime 截止时间
-     * @return 要删除的记录数量
-     */
-    long countByCreatedAtBefore(OffsetDateTime cutoffTime);
+    // =================== 验证和检查查询 ===================
 
     /**
      * 检查是否存在指定条件的审计日志
@@ -386,23 +520,65 @@ public interface SpringSysAuditLogRepo extends JpaRepository<SysAuditLogEntity, 
             Long userId, String action, OffsetDateTime startTime);
 
     /**
-     * 查找指定用户的第一条审计日志
-     *
-     * <p>这个方法用于查找用户的首次操作记录，这在用户行为分析中很有价值。
-     * 比如，我们可以通过这个方法了解用户的首次登录时间。</p>
-     *
-     * @param userId 用户ID
-     * @return 用户的第一条审计日志，如果不存在则返回空Optional
+     * 检查租户是否有审计记录
      */
-    Optional<SysAuditLogEntity> findFirstByUserIdOrderByCreatedAtAsc(Long userId);
+    boolean existsByTenantId(Long tenantId);
 
     /**
-     * 查找指定用户的最后一条审计日志
-     *
-     * <p>这个方法用于查找用户的最近操作记录，这在用户活跃度分析中很有用。</p>
-     *
-     * @param userId 用户ID
-     * @return 用户的最后一条审计日志，如果不存在则返回空Optional
+     * 检查指定对象是否有操作记录
      */
-    Optional<SysAuditLogEntity> findFirstByUserIdOrderByCreatedAtDesc(Long userId);
+    boolean existsByTargetTypeAndTargetId(String targetType, Long targetId);
+
+    // =================== 性能优化查询 ===================
+
+    /**
+     * 查询最近的审计日志（限制数量）
+     *
+     * <p>这个方法用于快速查看系统的最新活动，类似于查看最新的新闻动态。
+     * 在系统监控和实时分析中很有用。</p>
+     *
+     * @param tenantId 租户ID
+     * @param limit    返回记录数量限制
+     * @return 最近的审计日志列表
+     */
+    @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
+            "a.tenantId = :tenantId " +
+            "ORDER BY a.createdAt DESC " +
+            "LIMIT :limit")
+    List<SysAuditLogEntity> findRecentLogs(
+            @Param("tenantId") Long tenantId,
+            @Param("limit") int limit
+    );
+
+    /**
+     * 查询热门操作类型（按频率排序）
+     *
+     * <p>这个查询识别系统中最常见的操作类型，有助于了解系统的主要用途
+     * 和用户行为模式。</p>
+     */
+    @Query("SELECT a.action, COUNT(a) as frequency FROM SysAuditLogEntity a WHERE " +
+            "a.tenantId = :tenantId " +
+            "AND a.createdAt >= :startTime " +
+            "GROUP BY a.action " +
+            "ORDER BY frequency DESC")
+    List<Object[]> findPopularActions(
+            @Param("tenantId") Long tenantId,
+            @Param("startTime") OffsetDateTime startTime,
+            Pageable pageable
+    );
+
+    /**
+     * 批量查询多个用户的操作记录
+     *
+     * <p>当需要同时分析多个用户的行为时，这个方法比多次单独查询更高效。</p>
+     */
+    @Query("SELECT a FROM SysAuditLogEntity a WHERE " +
+            "a.userId IN :userIds " +
+            "AND a.createdAt >= :startTime " +
+            "ORDER BY a.createdAt DESC")
+    Page<SysAuditLogEntity> findMultiUserActions(
+            @Param("userIds") List<Long> userIds,
+            @Param("startTime") OffsetDateTime startTime,
+            Pageable pageable
+    );
 }

@@ -1,6 +1,6 @@
 package com.clinflash.baseai.infrastructure.config;
 
-import com.clinflash.baseai.infrastructure.external.audit.repository.AuditLogRepository;
+import com.clinflash.baseai.domain.audit.repository.SysAuditLogRepository;
 import com.clinflash.baseai.domain.audit.service.AuditService;
 import com.clinflash.baseai.domain.audit.service.AuditServiceImpl;
 import com.clinflash.baseai.infrastructure.external.email.EmailService;
@@ -113,7 +113,7 @@ public class ExternalServicesAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(AuditService.class)
     @ConditionalOnProperty(name = "audit.enabled", havingValue = "true", matchIfMissing = true)
-    public AuditService auditService(AuditLogRepository auditLogRepository,
+    public AuditService auditService(SysAuditLogRepository auditLogRepository,
                                      ObjectMapper objectMapper,
                                      ElasticsearchOperations elasticsearchOps,
                                      AuditServiceProperties properties) {
