@@ -4,6 +4,12 @@ spring:
     activate:
       on-profile: prod
 
+  jpa:
+    open-in-view: false
+
+  jmx:
+    enabled: false       # 生产环境关闭 JMX
+
 baseai:
   chat:
     performance:

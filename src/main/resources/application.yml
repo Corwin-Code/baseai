@@ -1,7 +1,14 @@
 # =================== Spring Configuration ===================
 spring:
   application:
-    name: baseai-cloud           # 应用名称
+    name: baseai                  # 应用名称
+
+  main:
+    lazy-initialization: true    # 延迟加载 Bean，提升启动速度
+  devtools:
+    add-properties: false        # 关闭 DevTools 自动注入属性（仅在引入 DevTools 时生效）
+  jmx:
+    enabled: false               # 关闭 Spring JMX 支持
 
   # ========== 数据源配置 ==========
   datasource:
@@ -21,14 +28,14 @@ spring:
 
   # ========== JPA / Hibernate 配置（如使用 Spring Data JPA） ==========
   jpa:
+    open-in-view: false           # 关闭 Open‑In‑View，避免视图渲染时触发懒加载
     hibernate:
-      ddl-auto: validate         # validate(生产) | update(开发) | create | create-drop，根据环境选择
+      ddl-auto: validate          # validate(生产) | update(开发) | create | create-drop，根据环境选择
     show-sql: false               # 是否在控制台打印 SQL
     properties:
       hibernate:
         format_sql: true          # 格式化 SQL
         use_sql_comments: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect  # Hibernate 方言
 
   # ========== Redis配置（用于缓存和会话） ==========
   data:
@@ -316,7 +323,7 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
   file:
-    name: logs/baseai-chat.log
+    name: logs/baseai.log
     max-size: 100MB
     max-history: 30
 

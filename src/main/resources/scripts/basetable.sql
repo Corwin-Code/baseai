@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS sys_audit_logs
     action        VARCHAR(64) NOT NULL,       -- 操作类型（如LOGIN、UPDATE、DELETE等）
     target_type   VARCHAR(64),                -- 目标对象类型（如User、Document）
     target_id     BIGINT,                     -- 目标对象主键ID
-    ip_address    INET,                       -- 操作IP
+    ip_address    VARCHAR(256),               -- 操作IP
     user_agent    VARCHAR(256),               -- 客户端信息
     detail        JSONB,                      -- 详细内容
     result_status VARCHAR(16),                -- 操作结果（success, fail, partial等）
