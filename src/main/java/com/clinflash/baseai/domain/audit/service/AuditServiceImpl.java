@@ -73,7 +73,7 @@ public class AuditServiceImpl implements AuditService {
     private final BlockingQueue<AuditEvent> auditQueue;
     private final ScheduledExecutorService scheduledExecutor;
 
-    // 配置参数
+    // 配置参数.
     @Value("${audit.async.enabled:true}")
     private boolean asyncEnabled;
 
