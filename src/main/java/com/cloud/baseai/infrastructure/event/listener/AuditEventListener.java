@@ -137,7 +137,7 @@ public class AuditEventListener {
 
             Map<String, Object> details = new HashMap<>();
             details.put("username", username);
-            details.put("requestedResource", event.getAuthorizationDecision().toString());
+            details.put("requestedResource", event.getAuthentication().toString());
             details.put("authorities", event.getAuthentication() != null ?
                     event.getAuthentication().get().getAuthorities().toString() : "none");
 
@@ -147,11 +147,11 @@ public class AuditEventListener {
                     "访问权限被拒绝: " + username,
                     AuditService.RiskLevel.LOW,
                     ipAddress,
-                    List.of("RESOURCE:" + event.getAuthorizationDecision().toString())
+                    List.of("RESOURCE:" + event.getAuthentication().toString())
             );
 
             log.debug("记录权限拒绝事件: username={}, resource={}",
-                    username, event.getAuthorizationDecision());
+                    username, event.getAuthentication());
 
         } catch (Exception e) {
             log.error("记录权限拒绝事件失败", e);
@@ -169,19 +169,19 @@ public class AuditEventListener {
     public void handleSessionTimeout(SessionTimeoutEvent event) {
         try {
             Map<String, Object> details = new HashMap<>();
-            details.put("sessionId", event.getSessionId());
-            details.put("timeout", event.getTimeout());
-            details.put("lastAccessTime", event.getLastAccessTime());
+            details.put("sessionId", event.sessionId());
+            details.put("timeout", event.timeout());
+            details.put("lastAccessTime", event.lastAccessTime());
 
             auditService.recordSystemEvent(
                     "SESSION_TIMEOUT",
                     "SecurityManager",
-                    "用户会话超时: sessionId=" + event.getSessionId(),
+                    "用户会话超时: sessionId=" + event.sessionId(),
                     AuditService.EventSeverity.LOW,
                     details
             );
 
-            log.debug("记录会话超时事件: sessionId={}", event.getSessionId());
+            log.debug("记录会话超时事件: sessionId={}", event.sessionId());
 
         } catch (Exception e) {
             log.error("记录会话超时事件失败", e);
@@ -317,27 +317,6 @@ public class AuditEventListener {
      * <p>这是一个自定义的事件类，用于表示用户会话超时。
      * 在实际项目中，可能需要定义更多的自定义事件。</p>
      */
-    public static class SessionTimeoutEvent {
-        private final String sessionId;
-        private final long timeout;
-        private final long lastAccessTime;
-
-        public SessionTimeoutEvent(String sessionId, long timeout, long lastAccessTime) {
-            this.sessionId = sessionId;
-            this.timeout = timeout;
-            this.lastAccessTime = lastAccessTime;
-        }
-
-        public String getSessionId() {
-            return sessionId;
-        }
-
-        public long getTimeout() {
-            return timeout;
-        }
-
-        public long getLastAccessTime() {
-            return lastAccessTime;
-        }
+    public record SessionTimeoutEvent(String sessionId, long timeout, long lastAccessTime) {
     }
 }

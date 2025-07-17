@@ -11,10 +11,16 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.task.DelegatingSecurityContextAsyncTaskExecutor;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 import java.util.concurrent.Executor;
 
@@ -112,7 +118,8 @@ public class AuditModuleAutoConfiguration {
         log.info("审计异步执行器初始化完成: 核心线程={}, 最大线程={}, 队列容量={}",
                 corePoolSize, executor.getMaxPoolSize(), properties.getAsync().getQueueCapacity());
 
-        return executor;
+        return new DelegatingSecurityContextAsyncTaskExecutor(
+                new ContextCopyingDecorator(executor));
     }
 
     /**
@@ -170,6 +177,49 @@ public class AuditModuleAutoConfiguration {
             log.info("安排审计数据保留任务 - 保留天数: {}, 归档间隔: {} 天",
                     properties.getRetention().getDefaultRetentionDays(),
                     properties.getRetention().getArchiveAfterDays());
+        }
+    }
+
+    /**
+     * 这个装饰器会在提交任务时捕获调用线程的 RequestAttributes，并在执行时还原
+     */
+    public static class ContextCopyingDecorator implements AsyncTaskExecutor {
+        private final ThreadPoolTaskExecutor delegate;
+
+        public ContextCopyingDecorator(ThreadPoolTaskExecutor delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void execute(Runnable task, long startTimeout) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+            delegate.execute(() -> {
+                try {
+                    RequestContextHolder.setRequestAttributes(requestAttributes);
+                    SecurityContextHolder.setContext(securityContext);
+                    task.run();
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            }, startTimeout);
+        }
+
+        @Override
+        public void execute(Runnable task) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+            delegate.execute(() -> {
+                try {
+                    RequestContextHolder.setRequestAttributes(requestAttributes);
+                    SecurityContextHolder.setContext(securityContext);
+                    task.run();
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            });
         }
     }
 }
