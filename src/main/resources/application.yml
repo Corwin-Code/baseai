@@ -91,6 +91,22 @@ spring:
 server:
   port: ${SERVER_PORT:9999}       # 服务端口，默认 9999
 
+app:
+  jwt:
+    secret: ${JWT_SECRET:very-long-secret-key-at-least-256-bits-for-production}
+    expiration: 86400000  # 24小时
+    refresh-expiration: 604800000  # 7天
+    issuer: baseai-cloud
+
+security:
+  # 允许的跨域源
+  cors:
+    allowed-origins: "*"
+    allowed-methods: "GET,POST,PUT,DELETE,OPTIONS"
+    allowed-headers: "*"
+    allow-credentials: true
+    max-age: 3600
+
 # =================== KB Module Configuration ===================
 kb:
   document:
@@ -315,7 +331,7 @@ management:
 logging:
   level:
     root: INFO                     # 全局日志级别
-    com.clinflash.baseai: DEBUG    # 应用包名日志级别
+    com.cloud.baseai: DEBUG    # 应用包名日志级别
     org.springframework.web: INFO
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN

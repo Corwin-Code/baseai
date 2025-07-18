@@ -73,13 +73,13 @@ public class FlowDefinitionJpaRepository implements FlowDefinitionRepository {
     public List<FlowDefinition> findByProjectIdAndStatus(Long projectId, FlowStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
         Page<FlowDefinitionEntity> entityPage = springRepo.findByProjectIdAndStatusAndDeletedAtIsNull(
-                projectId, status.getCode(), pageable);
+                projectId, status, pageable);
         return mapper.toDefinitionDomainList(entityPage.getContent());
     }
 
     @Override
     public int countByProjectIdAndStatus(Long projectId, FlowStatus status) {
-        return (int) springRepo.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, status.getCode());
+        return (int) springRepo.countByProjectIdAndStatusAndDeletedAtIsNull(projectId, status);
     }
 
     @Override

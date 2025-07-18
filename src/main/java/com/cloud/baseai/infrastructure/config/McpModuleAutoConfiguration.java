@@ -3,7 +3,7 @@ package com.cloud.baseai.infrastructure.config;
 import com.cloud.baseai.domain.mcp.service.HttpToolExecutionService;
 import com.cloud.baseai.domain.mcp.service.ToolExecutionService;
 import com.cloud.baseai.infrastructure.monitoring.McpMonitoringManager;
-import com.cloud.baseai.infrastructure.security.McpSecurityManager;
+import com.cloud.baseai.infrastructure.security.service.McpSecurityManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;

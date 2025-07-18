@@ -1,5 +1,6 @@
 package com.cloud.baseai.infrastructure.repository.kb.spring;
 
+import com.cloud.baseai.domain.kb.model.ParsingStatus;
 import com.cloud.baseai.infrastructure.persistence.kb.entity.KbDocumentEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -80,7 +81,7 @@ public interface SpringKbDocumentRepo extends JpaRepository<KbDocumentEntity, Lo
      * @param pageable      分页参数
      * @return 匹配状态的文档列表
      */
-    Page<KbDocumentEntity> findByParsingStatusAndDeletedAtIsNull(Integer parsingStatus, Pageable pageable);
+    Page<KbDocumentEntity> findByParsingStatusAndDeletedAtIsNull(ParsingStatus parsingStatus, Pageable pageable);
 
     /**
      * 根据来源类型查询文档

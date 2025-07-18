@@ -98,7 +98,7 @@ public class KbDocumentJpaRepository implements DocumentRepository {
     public List<Document> findByParsingStatus(ParsingStatus status, int limit) {
         Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.ASC, "createdAt"));
         Page<KbDocumentEntity> entityPage = springRepo.findByParsingStatusAndDeletedAtIsNull(
-                status.getCode(), pageable);
+                status, pageable);
 
         return mapper.toDomainList(entityPage.getContent());
     }

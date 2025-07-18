@@ -53,8 +53,7 @@ public class SystemTaskJpaRepository implements SystemTaskRepository {
     @Override
     public List<SystemTask> findByStatus(TaskStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
-        Integer statusCode = convertTaskStatusToInteger(status);
-        return springRepo.findByStatus(statusCode, pageable)
+        return springRepo.findByStatus(status, pageable)
                 .stream()
                 .map(mapper::toDomain)
                 .collect(Collectors.toList());
@@ -97,8 +96,7 @@ public class SystemTaskJpaRepository implements SystemTaskRepository {
 
     @Override
     public long countByStatus(TaskStatus status) {
-        Integer statusCode = convertTaskStatusToInteger(status);
-        return springRepo.countByStatusAndDeletedAtIsNull(statusCode);
+        return springRepo.countByStatusAndDeletedAtIsNull(status);
     }
 
     @Override
@@ -109,14 +107,5 @@ public class SystemTaskJpaRepository implements SystemTaskRepository {
     @Override
     public int cleanupCompletedTasks(OffsetDateTime completedBefore) {
         return springRepo.deleteCompletedTasksBefore(completedBefore);
-    }
-
-    private Integer convertTaskStatusToInteger(TaskStatus status) {
-        return switch (status) {
-            case PENDING -> 0;
-            case PROCESSING -> 1;
-            case SUCCESS -> 2;
-            case FAILED -> 3;
-        };
     }
 }

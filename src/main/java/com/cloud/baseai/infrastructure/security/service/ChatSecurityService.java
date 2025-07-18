@@ -1,4 +1,4 @@
-package com.cloud.baseai.infrastructure.security;
+package com.cloud.baseai.infrastructure.security.service;
 
 import com.cloud.baseai.infrastructure.utils.ChatUtils;
 import lombok.Getter;

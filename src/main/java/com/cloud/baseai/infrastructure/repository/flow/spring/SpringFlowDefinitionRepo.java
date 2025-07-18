@@ -1,5 +1,6 @@
 package com.cloud.baseai.infrastructure.repository.flow.spring;
 
+import com.cloud.baseai.domain.flow.model.FlowStatus;
 import com.cloud.baseai.infrastructure.persistence.flow.entity.FlowDefinitionEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -23,9 +24,9 @@ public interface SpringFlowDefinitionRepo extends JpaRepository<FlowDefinitionEn
     long countByProjectIdAndDeletedAtIsNull(Long projectId);
 
     Page<FlowDefinitionEntity> findByProjectIdAndStatusAndDeletedAtIsNull(
-            Long projectId, Integer status, Pageable pageable);
+            Long projectId, FlowStatus status, Pageable pageable);
 
-    long countByProjectIdAndStatusAndDeletedAtIsNull(Long projectId, Integer status);
+    long countByProjectIdAndStatusAndDeletedAtIsNull(Long projectId, FlowStatus status);
 
     List<FlowDefinitionEntity> findByProjectIdAndNameAndDeletedAtIsNullOrderByVersionDesc(
             Long projectId, String name);

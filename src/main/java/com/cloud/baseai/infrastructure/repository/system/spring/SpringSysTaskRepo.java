@@ -1,8 +1,10 @@
 package com.cloud.baseai.infrastructure.repository.system.spring;
 
+import com.cloud.baseai.domain.system.model.enums.TaskStatus;
 import com.cloud.baseai.infrastructure.persistence.system.entity.SysTaskEntity;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -28,7 +30,7 @@ public interface SpringSysTaskRepo extends JpaRepository<SysTaskEntity, Long> {
      */
     @Query("SELECT t FROM SysTaskEntity t WHERE t.status = :status AND t.deletedAt IS NULL " +
             "ORDER BY t.createdAt DESC")
-    List<SysTaskEntity> findByStatus(@Param("status") Integer status, Pageable pageable);
+    List<SysTaskEntity> findByStatus(@Param("status") TaskStatus status, Pageable pageable);
 
     /**
      * 按租户查找任务
@@ -61,7 +63,7 @@ public interface SpringSysTaskRepo extends JpaRepository<SysTaskEntity, Long> {
     /**
      * 统计指定状态的任务数量
      */
-    long countByStatusAndDeletedAtIsNull(Integer status);
+    long countByStatusAndDeletedAtIsNull(TaskStatus status);
 
     /**
      * 统计租户任务数量
@@ -71,6 +73,7 @@ public interface SpringSysTaskRepo extends JpaRepository<SysTaskEntity, Long> {
     /**
      * 清理已完成的旧任务
      */
+    @Modifying
     @Query("DELETE FROM SysTaskEntity t WHERE (t.status = 2 OR t.status = 3) " +
             "AND t.finishedAt < :completedBefore")
     int deleteCompletedTasksBefore(@Param("completedBefore") OffsetDateTime completedBefore);

@@ -10,6 +10,10 @@ spring:
   jmx:
     enabled: false       # 生产环境关闭 JMX
 
+  devtools:
+    restart:
+      enabled: false    # 彻底关闭自动重启
+
 baseai:
   chat:
     performance:

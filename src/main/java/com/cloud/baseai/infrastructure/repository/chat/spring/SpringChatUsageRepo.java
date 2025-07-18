@@ -4,6 +4,7 @@ import com.cloud.baseai.application.chat.dto.ModelUsageDTO;
 import com.cloud.baseai.infrastructure.persistence.chat.entity.ChatUsageDailyEntity;
 import com.cloud.baseai.infrastructure.repository.chat.ChatUsageJpaRepository;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -203,6 +204,7 @@ public interface SpringChatUsageRepo extends JpaRepository<ChatUsageDailyEntity,
      * <p>数据保留策略是企业级应用的重要考虑。过老的使用量数据
      * 可能需要归档或删除，以控制数据库大小和查询性能。</p>
      */
+    @Modifying
     @Query("DELETE FROM ChatUsageDailyEntity u WHERE u.statDate < :cutoffDate")
     void deleteDataBeforeDate(@Param("cutoffDate") LocalDate cutoffDate);
 
