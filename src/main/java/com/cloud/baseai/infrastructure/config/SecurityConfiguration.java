@@ -4,7 +4,7 @@ import com.cloud.baseai.infrastructure.security.jwt.JwtAuthenticationEntryPoint;
 import com.cloud.baseai.infrastructure.security.jwt.JwtAuthenticationFilter;
 import com.cloud.baseai.infrastructure.security.permission.CustomPermissionEvaluator;
 import com.cloud.baseai.infrastructure.security.service.CustomUserDetailsService;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -28,6 +28,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * <h1>Spring Security 核心配置类</h1>
@@ -59,28 +60,38 @@ public class SecurityConfiguration {
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final PasswordEncoder passwordEncoder;
-    private final ObjectMapper objectMapper;
+
+    // 环境配置
+    @Value("${spring.profiles.active:dev}")
+    private String activeProfile;
+
+    @Value("${security.cors.allowed-origins:http://localhost:3000}")
+    private String[] allowedOrigins;
+
+    @Value("${security.cors.allowed-methods:GET,POST,PUT,DELETE,OPTIONS}")
+    private String[] allowedMethods;
+
+    @Value("${security.headers.content-security-policy:default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'}")
+    private String contentSecurityPolicy;
 
     public SecurityConfiguration(
             CustomUserDetailsService userDetailsService,
             JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
-            JwtAuthenticationFilter jwtAuthenticationFilter,
-            PasswordEncoder passwordEncoder,
-            ObjectMapper objectMapper) {
+            JwtAuthenticationFilter jwtAuthenticationFilter) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-        this.passwordEncoder = passwordEncoder;
-        this.objectMapper = objectMapper;
     }
 
     /**
-     * BCrypt 强散列，用于存储密码。
+     * 密码编码器配置
+     *
+     * <p>使用BCrypt算法，强度设置为12轮，在安全性和性能之间取得平衡。
+     * 生产环境建议使用更高的强度值。</p>
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return new BCryptPasswordEncoder(12);
     }
 
     /**
@@ -133,7 +144,8 @@ public class SecurityConfiguration {
                                 "/actuator/**",                     // Spring Boot Actuator端点
                                 "/v3/api-docs/**",                  // OpenAPI文档
                                 "/swagger-ui/**",                   // Swagger UI
-                                "/swagger-ui.html"                  // Swagger首页
+                                "/swagger-ui.html",                 // Swagger首页
+                                "/doc.html"
                         ).permitAll()
 
                         // 静态资源
@@ -192,9 +204,8 @@ public class SecurityConfiguration {
      */
     @Bean
     public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder);
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService);
+//        authProvider.setPasswordEncoder(passwordEncoder);
         // 隐藏用户不存在的异常，防止用户枚举攻击
         authProvider.setHideUserNotFoundExceptions(false);
         return authProvider;
@@ -224,14 +235,14 @@ public class SecurityConfiguration {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // 允许的源域名（生产环境应该配置具体的域名）
-        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
+        configuration.setAllowedOriginPatterns(List.of("*"));
 
         // 允许的HTTP方法
         configuration.setAllowedMethods(Arrays.asList(
                 "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
 
         // 允许的请求头
-        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowedHeaders(List.of("*"));
 
         // 允许发送认证信息（如Cookies、Authorization头）
         configuration.setAllowCredentials(true);

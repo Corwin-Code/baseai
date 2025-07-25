@@ -5,7 +5,9 @@ import com.cloud.baseai.domain.audit.model.SysAuditLog;
 import com.cloud.baseai.domain.audit.repository.SysAuditLogRepository;
 import com.cloud.baseai.domain.audit.service.AuditService;
 import com.cloud.baseai.infrastructure.event.AuditEventPublisher;
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
+import com.cloud.baseai.infrastructure.exception.AuditException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.i18n.MessageManager;
 import com.cloud.baseai.infrastructure.utils.AuditUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,7 +87,7 @@ public class AuditCommandAppService {
      * @param userAgent   用户代理信息
      * @param contextData 额外的上下文数据
      * @return 创建成功的审计日志DTO
-     * @throws AuditServiceException 当创建操作失败时抛出
+     * @throws AuditException 当创建操作失败时抛出
      */
     public AuditLogDTO createAuditLog(Long tenantId, Long userId, String action,
                                       String targetType, Long targetId,
@@ -129,8 +131,7 @@ public class AuditCommandAppService {
 
         } catch (Exception e) {
             logger.error("创建审计记录失败: tenantId={}, action={}", tenantId, action, e);
-            throw new AuditServiceException("AUDIT_CREATE_FAILED",
-                    "创建审计记录失败: " + e.getMessage(), e);
+            throw AuditException.createFailed(e.getMessage());
         }
     }
 
@@ -146,7 +147,7 @@ public class AuditCommandAppService {
      *
      * @param auditEvents 审计事件列表
      * @return 批量处理结果，包含成功和失败的统计信息
-     * @throws AuditServiceException 当批量处理失败时抛出
+     * @throws AuditException 当批量处理失败时抛出
      */
     public BatchCreateResult batchCreateAuditLogs(List<AuditCreateCommand> auditEvents) {
         long startTime = System.currentTimeMillis();
@@ -179,8 +180,7 @@ public class AuditCommandAppService {
 
         } catch (Exception e) {
             logger.error("批量创建审计记录失败: 数量={}", auditEvents.size(), e);
-            throw new AuditServiceException("AUDIT_BATCH_CREATE_FAILED",
-                    "批量创建审计记录失败: " + e.getMessage(), e);
+            throw AuditException.batchCreateFailed(auditEvents.size(), e.getMessage());
         }
     }
 
@@ -241,8 +241,7 @@ public class AuditCommandAppService {
 
         } catch (Exception e) {
             logger.error("创建安全审计记录失败: eventType={}", securityEventType, e);
-            throw new AuditServiceException("SECURITY_AUDIT_CREATE_FAILED",
-                    "创建安全审计记录失败", e);
+            throw AuditException.securityAuditCreateFailed(securityEventType, riskLevel);
         }
     }
 
@@ -252,16 +251,16 @@ public class AuditCommandAppService {
      * 验证创建参数的有效性
      */
     private void validateCreateParameters(Long tenantId, String action, String description) {
-        Assert.notNull(tenantId, "租户ID不能为null");
-        Assert.hasText(action, "操作类型不能为空");
-        Assert.hasText(description, "操作描述不能为空");
+        Assert.notNull(tenantId, MessageManager.getMessage(ErrorCode.PARAM_011));
+        Assert.hasText(action, MessageManager.getMessage(ErrorCode.PARAM_012));
+        Assert.hasText(description, MessageManager.getMessage(ErrorCode.PARAM_013));
 
         if (action.length() > 64) {
-            throw new IllegalArgumentException("操作类型长度不能超过64个字符");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_014));
         }
 
         if (description.length() > 1000) {
-            throw new IllegalArgumentException("操作描述长度不能超过1000个字符");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_015));
         }
     }
 
@@ -269,11 +268,11 @@ public class AuditCommandAppService {
      * 验证批量处理参数
      */
     private void validateBatchParameters(List<AuditCreateCommand> auditEvents) {
-        Assert.notNull(auditEvents, "审计事件列表不能为null");
-        Assert.notEmpty(auditEvents, "审计事件列表不能为空");
+        Assert.notNull(auditEvents, MessageManager.getMessage(ErrorCode.PARAM_016));
+        Assert.notEmpty(auditEvents, MessageManager.getMessage(ErrorCode.PARAM_017));
 
         if (auditEvents.size() > 1000) {
-            throw new IllegalArgumentException("批量处理数量不能超过1000条");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_018));
         }
     }
 

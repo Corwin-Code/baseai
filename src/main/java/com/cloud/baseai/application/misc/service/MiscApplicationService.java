@@ -4,14 +4,15 @@ import com.cloud.baseai.application.misc.command.CreatePromptTemplateCommand;
 import com.cloud.baseai.application.misc.command.UpdatePromptTemplateCommand;
 import com.cloud.baseai.application.misc.command.UploadFileCommand;
 import com.cloud.baseai.application.misc.dto.*;
-import com.cloud.baseai.application.user.service.UserInfoService;
 import com.cloud.baseai.domain.misc.model.FileObject;
 import com.cloud.baseai.domain.misc.model.PromptTemplate;
 import com.cloud.baseai.domain.misc.model.StorageStatistics;
 import com.cloud.baseai.domain.misc.repository.FileObjectRepository;
 import com.cloud.baseai.domain.misc.repository.PromptTemplateRepository;
-import com.cloud.baseai.infrastructure.exception.MiscBusinessException;
-import com.cloud.baseai.infrastructure.exception.MiscTechnicalException;
+import com.cloud.baseai.domain.user.service.UserInfoService;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.MiscException;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,10 +80,7 @@ public class MiscApplicationService {
 
             // 第二步：检查名称唯一性
             if (templateRepo.existsByTenantIdAndName(cmd.tenantId(), cmd.name())) {
-                throw new MiscBusinessException(
-                        "DUPLICATE_TEMPLATE_NAME",
-                        "模板名称已存在：" + cmd.name()
-                );
+                throw MiscException.duplicateTemplateName(cmd.name());
             }
 
             // 第三步：创建领域对象
@@ -106,10 +104,14 @@ public class MiscApplicationService {
 
         } catch (Exception e) {
             log.error("提示词模板创建失败: name={}", cmd.name(), e);
-            if (e instanceof MiscBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new MiscTechnicalException("TEMPLATE_CREATE_ERROR", "创建提示词模板失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TEMPLATE_004)
+                    .cause(e)
+                    .context("operation", "createTemplate")
+                    .context("templateName", cmd.name())
+                    .build();
         }
     }
 
@@ -144,7 +146,11 @@ public class MiscApplicationService {
             return PageResultDTO.of(templateDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new MiscTechnicalException("TEMPLATE_LIST_ERROR", "获取模板列表失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TEMPLATE_008)
+                    .cause(e)
+                    .context("operation", "listTemplates")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -159,10 +165,7 @@ public class MiscApplicationService {
 
         try {
             PromptTemplate template = templateRepo.findById(templateId)
-                    .orElseThrow(() -> new MiscBusinessException(
-                            "TEMPLATE_NOT_FOUND",
-                            "提示词模板不存在：" + templateId
-                    ));
+                    .orElseThrow(() -> MiscException.templateNotFound(String.valueOf(templateId)));
 
             // 解析模板中的变量
             List<String> variables = extractVariables(template.content());
@@ -194,10 +197,14 @@ public class MiscApplicationService {
             );
 
         } catch (Exception e) {
-            if (e instanceof MiscBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new MiscTechnicalException("TEMPLATE_DETAIL_ERROR", "获取模板详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TEMPLATE_009)
+                    .cause(e)
+                    .context("operation", "getTemplateDetail")
+                    .context("templateId", templateId)
+                    .build();
         }
     }
 
@@ -210,17 +217,11 @@ public class MiscApplicationService {
 
         try {
             PromptTemplate template = templateRepo.findById(cmd.templateId())
-                    .orElseThrow(() -> new MiscBusinessException(
-                            "TEMPLATE_NOT_FOUND",
-                            "提示词模板不存在：" + cmd.templateId()
-                    ));
+                    .orElseThrow(() -> MiscException.templateNotFound(String.valueOf(cmd.templateId())));
 
             // 检查是否有编辑权限
             if (!template.isEditable()) {
-                throw new MiscBusinessException(
-                        "TEMPLATE_NOT_EDITABLE",
-                        "系统模板或已删除的模板无法编辑"
-                );
+                throw new MiscException(ErrorCode.BIZ_TEMPLATE_005);
             }
 
             // 构建更新后的内容，只更新非null的字段
@@ -234,10 +235,14 @@ public class MiscApplicationService {
             return toPromptTemplateDTO(updatedTemplate);
 
         } catch (Exception e) {
-            if (e instanceof MiscBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new MiscTechnicalException("TEMPLATE_UPDATE_ERROR", "更新模板失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TEMPLATE_007)
+                    .cause(e)
+                    .context("operation", "updateTemplate")
+                    .context("templateId", cmd.templateId())
+                    .build();
         }
     }
 
@@ -277,10 +282,14 @@ public class MiscApplicationService {
             return toFileObjectDTO(savedFileObject, cmd.originalName());
 
         } catch (Exception e) {
-            if (e instanceof MiscBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new MiscTechnicalException("FILE_UPLOAD_ERROR", "文件上传失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FILE_004)
+                    .cause(e)
+                    .context("operation", "uploadFile")
+                    .context("originalName", cmd.originalName())
+                    .build();
         }
     }
 
@@ -311,7 +320,10 @@ public class MiscApplicationService {
             );
 
         } catch (Exception e) {
-            throw new MiscTechnicalException("STORAGE_STATS_ERROR", "获取存储统计失败", e);
+            throw BusinessException.builder(ErrorCode.EXT_STORAGE_004)
+                    .cause(e)
+                    .context("operation", "getStorageStatistics")
+                    .build();
         }
     }
 
@@ -322,10 +334,7 @@ public class MiscApplicationService {
      */
     private void validateTemplateCreation(CreatePromptTemplateCommand cmd) {
         if (!cmd.hasValidContent()) {
-            throw new MiscBusinessException(
-                    "INVALID_TEMPLATE_CONTENT",
-                    "模板内容格式无效或包含危险字符"
-            );
+            throw new MiscException(ErrorCode.BIZ_TEMPLATE_006);
         }
 
         // 系统模板创建需要特殊权限（这里简化处理）
@@ -340,18 +349,12 @@ public class MiscApplicationService {
      */
     private void validateFileUpload(UploadFileCommand cmd) {
         if (!cmd.isValidSize()) {
-            throw new MiscBusinessException(
-                    "INVALID_FILE_SIZE",
-                    "文件大小超出允许范围"
-            );
+            throw new MiscException(ErrorCode.BIZ_FILE_002);
         }
 
         // 验证SHA256格式
         if (!cmd.sha256().matches("^[a-fA-F0-9]{64}$")) {
-            throw new MiscBusinessException(
-                    "INVALID_SHA256",
-                    "SHA256哈希值格式无效"
-            );
+            throw new MiscException(ErrorCode.BIZ_FILE_005);
         }
     }
 

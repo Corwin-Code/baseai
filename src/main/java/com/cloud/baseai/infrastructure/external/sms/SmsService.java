@@ -1,8 +1,8 @@
 package com.cloud.baseai.infrastructure.external.sms;
 
+import com.cloud.baseai.infrastructure.exception.SmsException;
 import com.cloud.baseai.infrastructure.external.sms.model.BatchSmsResult;
 import com.cloud.baseai.infrastructure.external.sms.model.SmsStatus;
-import com.cloud.baseai.infrastructure.exception.SmsServiceException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -45,11 +45,11 @@ public interface SmsService {
      * @param verificationCode 验证码，通常为4-6位数字
      * @param purpose          发送目的，如"注册验证"、"登录验证"等，用于内容个性化
      * @param expireMinutes    验证码有效期（分钟），用于提示用户
-     * @throws SmsServiceException      当短信发送失败时抛出
+     * @throws SmsException             当短信发送失败时抛出
      * @throws IllegalArgumentException 当传入参数无效时抛出
      */
     void sendVerificationCode(String phoneNumber, String verificationCode,
-                              String purpose, int expireMinutes) throws SmsServiceException;
+                              String purpose, int expireMinutes) throws SmsException;
 
     /**
      * 发送登录异常通知短信
@@ -62,10 +62,10 @@ public interface SmsService {
      * @param loginLocation 登录地点，如"北京市"
      * @param loginTime     登录时间
      * @param deviceInfo    设备信息，如"iPhone"、"Chrome浏览器"
-     * @throws SmsServiceException 当短信发送失败时抛出
+     * @throws SmsException 当短信发送失败时抛出
      */
     void sendSecurityAlert(String phoneNumber, String loginLocation,
-                           OffsetDateTime loginTime, String deviceInfo) throws SmsServiceException;
+                           OffsetDateTime loginTime, String deviceInfo) throws SmsException;
 
     /**
      * 发送业务通知短信
@@ -76,9 +76,9 @@ public interface SmsService {
      * @param phoneNumber      接收短信的手机号
      * @param notificationType 通知类型，如"任务完成"、"账户变动"
      * @param content          通知内容，应该简洁明了
-     * @throws SmsServiceException 当短信发送失败时抛出
+     * @throws SmsException 当短信发送失败时抛出
      */
-    void sendNotification(String phoneNumber, String notificationType, String content) throws SmsServiceException;
+    void sendNotification(String phoneNumber, String notificationType, String content) throws SmsException;
 
     /**
      * 使用模板发送短信
@@ -89,10 +89,10 @@ public interface SmsService {
      * @param phoneNumber    接收短信的手机号
      * @param templateCode   模板编码，由短信服务商提供
      * @param templateParams 模板参数，用于替换模板中的变量
-     * @throws SmsServiceException 当短信发送失败时抛出
+     * @throws SmsException 当短信发送失败时抛出
      */
     void sendTemplateMessage(String phoneNumber, String templateCode,
-                             Map<String, String> templateParams) throws SmsServiceException;
+                             Map<String, String> templateParams) throws SmsException;
 
     /**
      * 批量发送短信
@@ -104,10 +104,10 @@ public interface SmsService {
      * @param content      短信内容，营销短信需包含退订信息
      * @param sendTime     发送时间，null表示立即发送
      * @return 批量发送结果，包含成功和失败的统计信息
-     * @throws SmsServiceException 当批量发送过程中发生严重错误时抛出
+     * @throws SmsException 当批量发送过程中发生严重错误时抛出
      */
     BatchSmsResult sendBatchMessages(List<String> phoneNumbers, String content,
-                                     OffsetDateTime sendTime) throws SmsServiceException;
+                                     OffsetDateTime sendTime) throws SmsException;
 
     /**
      * 查询短信发送状态
@@ -117,9 +117,9 @@ public interface SmsService {
      *
      * @param messageId 短信消息ID，发送时返回
      * @return 短信状态信息
-     * @throws SmsServiceException 当查询失败时抛出
+     * @throws SmsException 当查询失败时抛出
      */
-    SmsStatus querySmsStatus(String messageId) throws SmsServiceException;
+    SmsStatus querySmsStatus(String messageId) throws SmsException;
 
     /**
      * 验证手机号码格式
@@ -139,9 +139,9 @@ public interface SmsService {
      * 当余额不足时，系统可以提前通知管理员进行充值。</p>
      *
      * @return 剩余短信数量，-1表示无限制或查询失败
-     * @throws SmsServiceException 当查询失败时抛出
+     * @throws SmsException 当查询失败时抛出
      */
-    long getRemainingQuota() throws SmsServiceException;
+    long getRemainingQuota() throws SmsException;
 
     /**
      * 检查手机号是否在黑名单中

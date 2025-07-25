@@ -3,14 +3,15 @@ package com.cloud.baseai.application.flow.service;
 import com.cloud.baseai.application.flow.command.*;
 import com.cloud.baseai.application.flow.dto.*;
 import com.cloud.baseai.application.metrics.service.MetricsService;
-import com.cloud.baseai.application.user.service.UserInfoService;
 import com.cloud.baseai.domain.flow.model.*;
 import com.cloud.baseai.domain.flow.repository.*;
 import com.cloud.baseai.domain.flow.service.FlowBuildService;
 import com.cloud.baseai.domain.flow.service.FlowExecutionService;
+import com.cloud.baseai.domain.user.service.UserInfoService;
 import com.cloud.baseai.infrastructure.config.FlowProperties;
-import com.cloud.baseai.infrastructure.exception.FlowException;
-import com.cloud.baseai.infrastructure.exception.FlowValidationException;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.FlowOrchestrationException;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -119,10 +120,7 @@ public class FlowOrchestrationAppService {
         try {
             // 验证项目名称唯一性
             if (projectRepo.existsByTenantIdAndName(cmd.tenantId(), cmd.name())) {
-                throw new FlowException(
-                        "DUPLICATE_PROJECT_NAME",
-                        "租户下已存在同名项目：" + cmd.name()
-                );
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_008, cmd.name());
             }
 
             // 创建项目
@@ -139,10 +137,14 @@ public class FlowOrchestrationAppService {
 
         } catch (Exception e) {
             recordMetrics("project.create", startTime, false);
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("PROJECT_CREATE_ERROR", "项目创建失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_009)
+                    .cause(e)
+                    .context("operation", "createProject")
+                    .context("name", cmd.name())
+                    .build();
         }
     }
 
@@ -172,7 +174,11 @@ public class FlowOrchestrationAppService {
             return PageResultDTO.of(projectDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new FlowException("PROJECT_LIST_ERROR", "项目列表查询失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_012)
+                    .cause(e)
+                    .context("operation", "listProjects")
+                    .context("search", search)
+                    .build();
         }
     }
 
@@ -184,10 +190,7 @@ public class FlowOrchestrationAppService {
 
         try {
             FlowProject project = projectRepo.findById(projectId)
-                    .orElseThrow(() -> new FlowException(
-                            "PROJECT_NOT_FOUND",
-                            "项目不存在，ID: " + projectId
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.projectNotFound(String.valueOf(projectId)));
 
             // 获取项目统计信息
             int totalFlows = definitionRepo.countByProjectId(projectId);
@@ -214,10 +217,14 @@ public class FlowOrchestrationAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("PROJECT_DETAIL_ERROR", "获取项目详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_013)
+                    .cause(e)
+                    .context("operation", "getProjectDetail")
+                    .context("projectId", projectId)
+                    .build();
         }
     }
 
@@ -237,17 +244,11 @@ public class FlowOrchestrationAppService {
         try {
             // 验证项目存在
             FlowProject project = projectRepo.findById(cmd.projectId())
-                    .orElseThrow(() -> new FlowException(
-                            "PROJECT_NOT_FOUND",
-                            "项目不存在，ID: " + cmd.projectId()
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.projectNotFound(String.valueOf(cmd.projectId())));
 
             // 验证流程名称在项目内的唯一性
             if (definitionRepo.existsByProjectIdAndName(cmd.projectId(), cmd.name())) {
-                throw new FlowException(
-                        "DUPLICATE_FLOW_NAME",
-                        "项目内已存在同名流程：" + cmd.name()
-                );
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_015, cmd.name());
             }
 
             // 创建流程定义
@@ -266,10 +267,15 @@ public class FlowOrchestrationAppService {
 
         } catch (Exception e) {
             recordMetrics("flow.create", startTime, false);
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("FLOW_CREATE_ERROR", "流程定义创建失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_019)
+                    .cause(e)
+                    .context("operation", "createFlowDefinition")
+                    .context("projectId", cmd.projectId())
+                    .context("flowName", cmd.name())
+                    .build();
         }
     }
 
@@ -289,16 +295,10 @@ public class FlowOrchestrationAppService {
         try {
             // 验证流程定义存在且为草稿状态
             FlowDefinition definition = definitionRepo.findById(cmd.definitionId())
-                    .orElseThrow(() -> new FlowException(
-                            "FLOW_NOT_FOUND",
-                            "流程定义不存在，ID: " + cmd.definitionId()
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.flowNotFound(String.valueOf(cmd.definitionId())));
 
             if (definition.status() != FlowStatus.DRAFT) {
-                throw new FlowException(
-                        "INVALID_FLOW_STATUS",
-                        "只有草稿状态的流程才能修改结构"
-                );
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_016);
             }
 
             // 验证流程结构
@@ -356,10 +356,14 @@ public class FlowOrchestrationAppService {
 
         } catch (Exception e) {
             recordMetrics("flow.structure.update", startTime, false);
-            if (e instanceof FlowException || e instanceof FlowValidationException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("FLOW_STRUCTURE_UPDATE_ERROR", "流程结构更新失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_025)
+                    .cause(e)
+                    .context("operation", "updateFlowStructure")
+                    .context("definitionId", cmd.definitionId())
+                    .build();
         }
     }
 
@@ -378,16 +382,10 @@ public class FlowOrchestrationAppService {
         try {
             // 验证流程定义存在且为草稿状态
             FlowDefinition definition = definitionRepo.findById(cmd.definitionId())
-                    .orElseThrow(() -> new FlowException(
-                            "FLOW_NOT_FOUND",
-                            "流程定义不存在，ID: " + cmd.definitionId()
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.flowNotFound(String.valueOf(cmd.definitionId())));
 
             if (definition.status() != FlowStatus.DRAFT) {
-                throw new FlowException(
-                        "INVALID_FLOW_STATUS",
-                        "只有草稿状态的流程才能发布"
-                );
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_017);
             }
 
             // 获取流程结构并验证
@@ -395,7 +393,7 @@ public class FlowOrchestrationAppService {
             List<FlowEdge> edges = edgeRepo.findByDefinitionId(cmd.definitionId());
 
             if (nodes.isEmpty()) {
-                throw new FlowValidationException("流程至少需要包含一个节点");
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_027);
             }
 
             // 使用构建服务验证流程完整性
@@ -421,10 +419,14 @@ public class FlowOrchestrationAppService {
 
         } catch (Exception e) {
             recordMetrics("flow.publish", startTime, false);
-            if (e instanceof FlowException || e instanceof FlowValidationException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("FLOW_PUBLISH_ERROR", "流程发布失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_023)
+                    .cause(e)
+                    .context("operation", "publishFlow")
+                    .context("definitionId", cmd.definitionId())
+                    .build();
         }
     }
 
@@ -455,7 +457,11 @@ public class FlowOrchestrationAppService {
             return PageResultDTO.of(definitionDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new FlowException("FLOW_LIST_ERROR", "流程定义列表查询失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_022)
+                    .cause(e)
+                    .context("operation", "listFlowDefinitions")
+                    .context("projectId", projectId)
+                    .build();
         }
     }
 
@@ -467,10 +473,7 @@ public class FlowOrchestrationAppService {
 
         try {
             FlowDefinition definition = definitionRepo.findById(definitionId)
-                    .orElseThrow(() -> new FlowException(
-                            "FLOW_NOT_FOUND",
-                            "流程定义不存在，ID: " + definitionId
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.flowNotFound(String.valueOf(definitionId)));
 
             List<FlowNode> nodes = nodeRepo.findByDefinitionId(definitionId);
             List<FlowEdge> edges = edgeRepo.findByDefinitionId(definitionId);
@@ -483,10 +486,14 @@ public class FlowOrchestrationAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("FLOW_STRUCTURE_GET_ERROR", "获取流程结构失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_026)
+                    .cause(e)
+                    .context("operation", "getFlowStructure")
+                    .context("definitionId", definitionId)
+                    .build();
         }
     }
 
@@ -510,24 +517,15 @@ public class FlowOrchestrationAppService {
         try {
             // 验证流程定义存在且已发布
             FlowDefinition definition = definitionRepo.findById(cmd.definitionId())
-                    .orElseThrow(() -> new FlowException(
-                            "FLOW_NOT_FOUND",
-                            "流程定义不存在，ID: " + cmd.definitionId()
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.flowNotFound(String.valueOf(cmd.definitionId())));
 
             if (!definition.canExecute()) {
-                throw new FlowException(
-                        "INVALID_FLOW_STATUS",
-                        "只有已发布的流程才能执行"
-                );
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_018);
             }
 
             // 获取最新的流程快照
             FlowSnapshot snapshot = snapshotRepo.findLatestByDefinitionId(cmd.definitionId())
-                    .orElseThrow(() -> new FlowException(
-                            "SNAPSHOT_NOT_FOUND",
-                            "流程快照不存在，请重新发布流程"
-                    ));
+                    .orElseThrow(() -> new FlowOrchestrationException(ErrorCode.BIZ_FLOW_057));
 
             // 创建运行实例
             FlowRun run = FlowRun.create(
@@ -552,10 +550,14 @@ public class FlowOrchestrationAppService {
 
         } catch (Exception e) {
             recordMetrics("flow.execute", startTime, false);
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("FLOW_EXECUTE_ERROR", "流程执行失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_005)
+                    .cause(e)
+                    .context("operation", "executeFlow")
+                    .context("definitionId", cmd.definitionId())
+                    .build();
         }
     }
 
@@ -567,10 +569,7 @@ public class FlowOrchestrationAppService {
 
         try {
             FlowRun run = runRepo.findById(runId)
-                    .orElseThrow(() -> new FlowException(
-                            "RUN_NOT_FOUND",
-                            "运行实例不存在，ID: " + runId
-                    ));
+                    .orElseThrow(() -> new FlowOrchestrationException(ErrorCode.BIZ_FLOW_052, runId));
 
             // 获取运行日志
             List<FlowRunLog> logs = runLogRepo.findByRunId(runId);
@@ -601,10 +600,14 @@ public class FlowOrchestrationAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("RUN_DETAIL_ERROR", "获取运行详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_054)
+                    .cause(e)
+                    .context("operation", "getRunDetail")
+                    .context("runId", runId)
+                    .build();
         }
     }
 
@@ -635,7 +638,11 @@ public class FlowOrchestrationAppService {
             return PageResultDTO.of(runDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new FlowException("RUN_HISTORY_ERROR", "获取运行历史失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_055)
+                    .cause(e)
+                    .context("operation", "getRunHistory")
+                    .context("snapshotId", snapshotId)
+                    .build();
         }
     }
 
@@ -648,16 +655,10 @@ public class FlowOrchestrationAppService {
 
         try {
             FlowRun run = runRepo.findById(runId)
-                    .orElseThrow(() -> new FlowException(
-                            "RUN_NOT_FOUND",
-                            "运行实例不存在，ID: " + runId
-                    ));
+                    .orElseThrow(() -> new FlowOrchestrationException(ErrorCode.BIZ_FLOW_052, runId));
 
             if (!run.isRunning()) {
-                throw new FlowException(
-                        "INVALID_RUN_STATUS",
-                        "只有运行中的流程才能停止"
-                );
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_053);
             }
 
             // 通知执行服务停止执行
@@ -668,10 +669,14 @@ public class FlowOrchestrationAppService {
             runRepo.save(run);
 
         } catch (Exception e) {
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("STOP_EXECUTION_ERROR", "停止执行失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_051)
+                    .cause(e)
+                    .context("operation", "stopExecution")
+                    .context("runId", runId)
+                    .build();
         }
     }
 
@@ -686,10 +691,7 @@ public class FlowOrchestrationAppService {
 
         try {
             FlowDefinition currentDefinition = definitionRepo.findById(definitionId)
-                    .orElseThrow(() -> new FlowException(
-                            "FLOW_NOT_FOUND",
-                            "流程定义不存在，ID: " + definitionId
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.flowNotFound(String.valueOf(definitionId)));
 
             // 将当前版本标记为非最新
             if (currentDefinition.isLatest()) {
@@ -736,10 +738,14 @@ public class FlowOrchestrationAppService {
             return toDefinitionDTO(newVersion);
 
         } catch (Exception e) {
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("CREATE_VERSION_ERROR", "创建新版本失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_063)
+                    .cause(e)
+                    .context("operation", "createNewVersion")
+                    .context("definitionId", definitionId)
+                    .build();
         }
     }
 
@@ -751,10 +757,7 @@ public class FlowOrchestrationAppService {
 
         try {
             FlowDefinition definition = definitionRepo.findById(definitionId)
-                    .orElseThrow(() -> new FlowException(
-                            "FLOW_NOT_FOUND",
-                            "流程定义不存在，ID: " + definitionId
-                    ));
+                    .orElseThrow(() -> FlowOrchestrationException.flowNotFound(String.valueOf(definitionId)));
 
             List<FlowDefinition> versions = definitionRepo.findVersionsByProjectIdAndName(
                     definition.projectId(), definition.name());
@@ -764,10 +767,14 @@ public class FlowOrchestrationAppService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("VERSION_HISTORY_ERROR", "获取版本历史失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_064)
+                    .cause(e)
+                    .context("operation", "getVersionHistory")
+                    .context("definitionId", definitionId)
+                    .build();
         }
     }
 
@@ -781,10 +788,7 @@ public class FlowOrchestrationAppService {
 
         try {
             FlowSnapshot snapshot = snapshotRepo.findById(snapshotId)
-                    .orElseThrow(() -> new FlowException(
-                            "SNAPSHOT_NOT_FOUND",
-                            "流程快照不存在，ID: " + snapshotId
-                    ));
+                    .orElseThrow(() -> new FlowOrchestrationException(ErrorCode.BIZ_FLOW_058, snapshotId));
 
             return new FlowSnapshotDTO(
                     snapshot.id(),
@@ -795,10 +799,14 @@ public class FlowOrchestrationAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof FlowException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new FlowException("SNAPSHOT_GET_ERROR", "获取快照失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_060)
+                    .cause(e)
+                    .context("operation", "getSnapshot")
+                    .context("snapshotId", snapshotId)
+                    .build();
         }
     }
 
@@ -853,7 +861,11 @@ public class FlowOrchestrationAppService {
             );
 
         } catch (Exception e) {
-            throw new FlowException("STATISTICS_ERROR", "获取统计信息失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_062)
+                    .cause(e)
+                    .context("operation", "getStatistics")
+                    .context("projectId", projectId)
+                    .build();
         }
     }
 

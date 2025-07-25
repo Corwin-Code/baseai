@@ -1,6 +1,6 @@
 package com.cloud.baseai.infrastructure.external.llm;
 
-import com.cloud.baseai.infrastructure.exception.ChatCompletionException;
+import com.cloud.baseai.infrastructure.exception.ChatException;
 
 import java.util.List;
 import java.util.Map;
@@ -34,7 +34,7 @@ public interface ChatCompletionService {
      *
      * @param context 包含消息历史、模型配置、知识上下文等信息的完整上下文
      * @return 生成的完成响应，包含回复内容、Token使用量、耗时等统计信息
-     * @throws ChatCompletionException 当LLM调用失败时抛出
+     * @throws ChatException 当LLM调用失败时抛出
      */
     ChatCompletionResult generateCompletion(Map<String, Object> context);
 
@@ -49,7 +49,7 @@ public interface ChatCompletionService {
      *
      * @param context 对话上下文信息
      * @param onChunk 处理每个文本片段的回调函数
-     * @throws ChatCompletionException 当流式生成过程中发生错误时抛出
+     * @throws ChatException 当流式生成过程中发生错误时抛出
      */
     void generateStreamResponse(Map<String, Object> context, Consumer<String> onChunk);
 

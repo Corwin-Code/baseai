@@ -1,6 +1,7 @@
 package com.cloud.baseai.infrastructure.external.llm.impl;
 
-import com.cloud.baseai.infrastructure.exception.ChatCompletionException;
+import com.cloud.baseai.infrastructure.exception.ChatException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -138,7 +139,7 @@ public class MockChatCompletionService implements ChatCompletionService {
         if (context.containsKey("messages")) {
             List<Map<String, Object>> messages = (List<Map<String, Object>>) context.get("messages");
             if (!messages.isEmpty()) {
-                Map<String, Object> lastMessage = messages.get(messages.size() - 1);
+                Map<String, Object> lastMessage = messages.getLast();
                 return (String) lastMessage.get("content");
             }
         }
@@ -189,7 +190,7 @@ public class MockChatCompletionService implements ChatCompletionService {
     private void simulateRandomErrors() {
         // 5%的概率模拟错误
         if (random.nextDouble() < 0.05) {
-            throw new ChatCompletionException("MOCK_ERROR", "模拟的随机错误，用于测试错误处理");
+            throw new ChatException(ErrorCode.MOCK_001);
         }
     }
 }

@@ -9,7 +9,6 @@ import com.cloud.baseai.application.kb.service.KnowledgeBaseAppService;
 import com.cloud.baseai.application.mcp.command.ExecuteToolCommand;
 import com.cloud.baseai.application.mcp.service.McpApplicationService;
 import com.cloud.baseai.application.metrics.service.MetricsService;
-import com.cloud.baseai.application.user.service.UserInfoService;
 import com.cloud.baseai.domain.chat.model.ChatCitation;
 import com.cloud.baseai.domain.chat.model.ChatMessage;
 import com.cloud.baseai.domain.chat.model.ChatThread;
@@ -20,9 +19,12 @@ import com.cloud.baseai.domain.chat.repository.ChatThreadRepository;
 import com.cloud.baseai.domain.chat.repository.ChatUsageRepository;
 import com.cloud.baseai.domain.chat.service.ChatProcessingService;
 import com.cloud.baseai.domain.chat.service.UsageCalculationService;
+import com.cloud.baseai.domain.user.service.UserInfoService;
 import com.cloud.baseai.infrastructure.config.ChatProperties;
-import com.cloud.baseai.infrastructure.exception.ChatBusinessException;
-import com.cloud.baseai.infrastructure.exception.ChatTechnicalException;
+import com.cloud.baseai.infrastructure.constants.ChatConstants;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ChatException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -139,8 +141,7 @@ public class ChatApplicationService {
         try {
             // 验证模型可用性
             if (!llmService.isModelAvailable(cmd.defaultModel())) {
-                throw new ChatBusinessException("MODEL_UNAVAILABLE",
-                        "指定的模型暂时不可用: " + cmd.defaultModel());
+                throw ChatException.modelUnavailable(cmd.defaultModel());
             }
 
             // 验证流程快照（如果指定）
@@ -171,10 +172,14 @@ public class ChatApplicationService {
 
         } catch (Exception e) {
             recordMetrics("thread.create", startTime, false);
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("THREAD_CREATE_ERROR", "对话线程创建失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_004)
+                    .cause(e)
+                    .context("operation", "createThread")
+                    .context("title", cmd.title())
+                    .build();
         }
     }
 
@@ -205,7 +210,12 @@ public class ChatApplicationService {
             return PageResultDTO.of(threadDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new ChatTechnicalException("THREAD_LIST_ERROR", "对话线程列表查询失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_007)
+                    .cause(e)
+                    .context("operation", "listThreads")
+                    .context("tenantId", tenantId)
+                    .context("userId", userId)
+                    .build();
         }
     }
 
@@ -217,9 +227,7 @@ public class ChatApplicationService {
 
         try {
             ChatThread thread = threadRepo.findById(threadId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "THREAD_NOT_FOUND", "对话线程不存在，ID: " + threadId
-                    ));
+                    .orElseThrow(() -> ChatException.threadNotFound(String.valueOf(threadId)));
 
             // 获取统计信息
             int messageCount = messageRepo.countByThreadId(threadId);
@@ -251,10 +259,14 @@ public class ChatApplicationService {
             );
 
         } catch (Exception e) {
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("THREAD_DETAIL_ERROR", "获取对话线程详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_008)
+                    .cause(e)
+                    .context("operation", "getThreadDetail")
+                    .context("threadId", threadId)
+                    .build();
         }
     }
 
@@ -267,15 +279,12 @@ public class ChatApplicationService {
 
         try {
             ChatThread thread = threadRepo.findById(cmd.threadId())
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "THREAD_NOT_FOUND", "对话线程不存在，ID: " + cmd.threadId()
-                    ));
+                    .orElseThrow(() -> ChatException.threadNotFound(String.valueOf(cmd.threadId())));
 
             // 验证新模型（如果更改）
             if (cmd.defaultModel() != null && !cmd.defaultModel().equals(thread.defaultModel())) {
                 if (!llmService.isModelAvailable(cmd.defaultModel())) {
-                    throw new ChatBusinessException("MODEL_UNAVAILABLE",
-                            "指定的模型暂时不可用: " + cmd.defaultModel());
+                    throw ChatException.modelUnavailable(cmd.defaultModel());
                 }
             }
 
@@ -291,10 +300,14 @@ public class ChatApplicationService {
             return toChatThreadDTO(thread);
 
         } catch (Exception e) {
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("THREAD_UPDATE_ERROR", "更新对话线程失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_005)
+                    .cause(e)
+                    .context("operation", "updateThread")
+                    .context("threadId", cmd.threadId())
+                    .build();
         }
     }
 
@@ -307,9 +320,7 @@ public class ChatApplicationService {
 
         try {
             ChatThread thread = threadRepo.findById(threadId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "THREAD_NOT_FOUND", "对话线程不存在，ID: " + threadId
-                    ));
+                    .orElseThrow(() -> ChatException.threadNotFound(String.valueOf(threadId)));
 
             // 软删除所有相关消息
             messageRepo.softDeleteByThreadId(threadId, operatorId);
@@ -321,10 +332,14 @@ public class ChatApplicationService {
             threadRepo.softDelete(threadId, operatorId);
 
         } catch (Exception e) {
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("THREAD_DELETE_ERROR", "删除对话线程失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_006)
+                    .cause(e)
+                    .context("operation", "deleteThread")
+                    .context("threadId", threadId)
+                    .build();
         }
     }
 
@@ -352,9 +367,7 @@ public class ChatApplicationService {
         try {
             // 验证线程存在
             ChatThread thread = threadRepo.findById(threadId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "THREAD_NOT_FOUND", "对话线程不存在，ID: " + threadId
-                    ));
+                    .orElseThrow(() -> ChatException.threadNotFound(String.valueOf(threadId)));
 
             // 验证消息内容
             validateMessageContent(cmd.content());
@@ -389,10 +402,14 @@ public class ChatApplicationService {
 
         } catch (Exception e) {
             recordMetrics("message.send", startTime, false);
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("MESSAGE_SEND_ERROR", "消息发送失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_011)
+                    .cause(e)
+                    .context("operation", "sendMessage")
+                    .context("threadId", threadId)
+                    .build();
         }
     }
 
@@ -438,7 +455,11 @@ public class ChatApplicationService {
             return PageResultDTO.of(messageDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new ChatTechnicalException("MESSAGE_LIST_ERROR", "获取对话消息失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_012)
+                    .cause(e)
+                    .context("operation", "getMessages")
+                    .context("threadId", threadId)
+                    .build();
         }
     }
 
@@ -448,9 +469,7 @@ public class ChatApplicationService {
     public ChatMessageDetailDTO getMessageDetail(Long messageId) {
         try {
             ChatMessage message = messageRepo.findById(messageId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "MESSAGE_NOT_FOUND", "消息不存在，ID: " + messageId
-                    ));
+                    .orElseThrow(() -> new ChatException(ErrorCode.BIZ_CHAT_009, messageId));
 
             // 获取引用信息
             List<ChatCitation> citations = citationRepo.findByMessageId(messageId);
@@ -469,10 +488,14 @@ public class ChatApplicationService {
             );
 
         } catch (Exception e) {
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("MESSAGE_DETAIL_ERROR", "获取消息详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_013)
+                    .cause(e)
+                    .context("operation", "getMessageDetail")
+                    .context("messageId", messageId)
+                    .build();
         }
     }
 
@@ -487,19 +510,14 @@ public class ChatApplicationService {
 
         try {
             ChatMessage userMessage = messageRepo.findById(messageId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "MESSAGE_NOT_FOUND", "消息不存在，ID: " + messageId
-                    ));
+                    .orElseThrow(() -> new ChatException(ErrorCode.BIZ_CHAT_009, messageId));
 
             if (userMessage.role() != MessageRole.USER) {
-                throw new ChatBusinessException("INVALID_MESSAGE_TYPE",
-                        "只能对用户消息重新生成回复");
+                throw new ChatException(ErrorCode.BIZ_CHAT_043);
             }
 
             ChatThread thread = threadRepo.findById(userMessage.threadId())
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "THREAD_NOT_FOUND", "对话线程不存在"
-                    ));
+                    .orElseThrow(() -> new ChatException(ErrorCode.BIZ_CHAT_002));
 
             // 删除原有的助手回复（如果存在）
             messageRepo.deleteAssistantResponseAfter(userMessage.id());
@@ -507,7 +525,7 @@ public class ChatApplicationService {
             // 使用新参数重新生成
             SendMessageCommand newCmd = new SendMessageCommand(
                     userMessage.content(),
-                    "TEXT",
+                    ChatConstants.ContentTypes.TEXT,
                     cmd.enableKnowledgeRetrieval(),
                     cmd.enableToolCalling(),
                     cmd.temperature(),
@@ -518,10 +536,14 @@ public class ChatApplicationService {
             return sendMessage(thread.id(), newCmd);
 
         } catch (Exception e) {
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("REGENERATE_ERROR", "重新生成回复失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_042)
+                    .cause(e)
+                    .context("operation", "regenerateResponse")
+                    .context("messageId", messageId)
+                    .build();
         }
     }
 
@@ -532,9 +554,7 @@ public class ChatApplicationService {
     public void submitFeedback(Long messageId, SubmitFeedbackCommand cmd) {
         try {
             ChatMessage message = messageRepo.findById(messageId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "MESSAGE_NOT_FOUND", "消息不存在，ID: " + messageId
-                    ));
+                    .orElseThrow(() -> new ChatException(ErrorCode.BIZ_CHAT_009, messageId));
 
             // 记录反馈信息（这里可以扩展为独立的反馈表）
             log.info("收到消息反馈: messageId={}, rating={}, comment={}",
@@ -546,10 +566,14 @@ public class ChatApplicationService {
             }
 
         } catch (Exception e) {
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("FEEDBACK_ERROR", "提交反馈失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_040)
+                    .cause(e)
+                    .context("operation", "submitFeedback")
+                    .context("messageId", messageId)
+                    .build();
         }
     }
 
@@ -559,9 +583,7 @@ public class ChatApplicationService {
     public List<String> getSuggestions(Long threadId, Integer count) {
         try {
             ChatThread thread = threadRepo.findById(threadId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "THREAD_NOT_FOUND", "对话线程不存在，ID: " + threadId
-                    ));
+                    .orElseThrow(() -> ChatException.threadNotFound(String.valueOf(threadId)));
 
             // 获取最近的对话历史
             List<ChatMessage> recentMessages = messageRepo.findByThreadIdOrderByCreatedAtDesc(threadId, 10);
@@ -570,10 +592,14 @@ public class ChatApplicationService {
             return chatService.generateSuggestions(recentMessages, count);
 
         } catch (Exception e) {
-            if (e instanceof ChatBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new ChatTechnicalException("SUGGESTION_ERROR", "生成建议问题失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_041)
+                    .cause(e)
+                    .context("operation", "getSuggestions")
+                    .context("threadId", threadId)
+                    .build();
         }
     }
 
@@ -619,7 +645,11 @@ public class ChatApplicationService {
             );
 
         } catch (Exception e) {
-            throw new ChatTechnicalException("STATISTICS_ERROR", "获取统计信息失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_046)
+                    .cause(e)
+                    .context("operation", "getStatistics")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -631,7 +661,11 @@ public class ChatApplicationService {
             return usageService.getUsageStatistics(tenantId, period, groupBy);
 
         } catch (Exception e) {
-            throw new ChatTechnicalException("USAGE_STATS_ERROR", "获取使用量统计失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_047)
+                    .cause(e)
+                    .context("operation", "getUsageStatistics")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -709,9 +743,7 @@ public class ChatApplicationService {
 
             // 验证和预处理
             ChatThread thread = threadRepo.findById(threadId)
-                    .orElseThrow(() -> new ChatBusinessException(
-                            "THREAD_NOT_FOUND", "对话线程不存在，ID: " + threadId
-                    ));
+                    .orElseThrow(() -> ChatException.threadNotFound(String.valueOf(threadId)));
 
             // 发送处理步骤事件
             emitter.send(SseEmitter.event()
@@ -785,12 +817,11 @@ public class ChatApplicationService {
      */
     private void validateMessageContent(String content) {
         if (content == null || content.trim().isEmpty()) {
-            throw new ChatBusinessException("EMPTY_CONTENT", "消息内容不能为空");
+            throw new ChatException(ErrorCode.BIZ_CHAT_016);
         }
 
         if (content.length() > config.getMaxMessageLength()) {
-            throw new ChatBusinessException("CONTENT_TOO_LONG",
-                    "消息内容过长，最大允许 " + config.getMaxMessageLength() + " 字符");
+            throw new ChatException(ErrorCode.BIZ_CHAT_018, config.getMaxMessageLength());
         }
     }
 
@@ -802,8 +833,7 @@ public class ChatApplicationService {
         if (config.isRateLimitEnabled()) {
             int recentMessages = messageRepo.countRecentMessages(userId, config.getRateLimitWindow());
             if (recentMessages >= config.getRateLimitMax()) {
-                throw new ChatBusinessException("RATE_LIMIT_EXCEEDED",
-                        "发送频率过高，请稍后再试");
+                throw new ChatException(ErrorCode.BIZ_CHAT_032);
             }
         }
     }
@@ -847,8 +877,7 @@ public class ChatApplicationService {
         try {
             flowService.getSnapshot(flowSnapshotId);
         } catch (Exception e) {
-            throw new ChatBusinessException("INVALID_FLOW_SNAPSHOT",
-                    "指定的流程快照不存在或无效: " + flowSnapshotId);
+            throw new ChatException(ErrorCode.BIZ_CHAT_039, flowSnapshotId);
         }
     }
 
@@ -1044,7 +1073,11 @@ public class ChatApplicationService {
             return assistantMessage;
 
         } catch (Exception e) {
-            throw new ChatTechnicalException("RESPONSE_GENERATION_ERROR", "生成回复失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_CHAT_044)
+                    .cause(e)
+                    .context("operation", "generateAssistantResponse")
+                    .context("threadId", thread.id())
+                    .build();
         }
     }
 

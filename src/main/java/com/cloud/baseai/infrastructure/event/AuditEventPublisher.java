@@ -4,7 +4,8 @@ import com.cloud.baseai.domain.audit.event.DataChangeAuditEvent;
 import com.cloud.baseai.domain.audit.event.SecurityAuditEvent;
 import com.cloud.baseai.domain.audit.event.SystemAuditEvent;
 import com.cloud.baseai.domain.audit.event.UserActionAuditEvent;
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
+import com.cloud.baseai.infrastructure.exception.AuditException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Getter;
 import org.slf4j.Logger;
@@ -122,8 +123,7 @@ public class AuditEventPublisher implements ApplicationEventPublisherAware {
             } catch (Exception e) {
                 log.error("发布用户操作审计事件失败: action={}", action, e);
                 recordPublishError();
-                throw new AuditServiceException("EVENT_PUBLISH_FAILED",
-                        "发布审计事件失败: " + e.getMessage(), e);
+                throw new AuditException(ErrorCode.BIZ_AUDIT_031, e.getMessage(), e);
             }
         });
     }
@@ -188,8 +188,7 @@ public class AuditEventPublisher implements ApplicationEventPublisherAware {
             } catch (Exception e) {
                 log.error("发布安全审计事件失败: eventType={}", eventType, e);
                 recordPublishError();
-                throw new AuditServiceException("SECURITY_EVENT_PUBLISH_FAILED",
-                        "发布安全审计事件失败: " + e.getMessage(), e);
+                throw new AuditException(ErrorCode.BIZ_AUDIT_032, e.getMessage(), e);
             }
         });
     }
@@ -305,8 +304,7 @@ public class AuditEventPublisher implements ApplicationEventPublisherAware {
             } catch (Exception e) {
                 log.error("发布数据变更审计事件失败: operationType={}", operationType, e);
                 recordPublishError();
-                throw new AuditServiceException("DATA_CHANGE_EVENT_PUBLISH_FAILED",
-                        "发布数据变更审计事件失败: " + e.getMessage(), e);
+                throw new AuditException(ErrorCode.BIZ_AUDIT_033, e.getMessage(), e);
             }
         });
     }

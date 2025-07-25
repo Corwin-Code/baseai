@@ -4,10 +4,12 @@ import com.cloud.baseai.application.audit.command.AuditQueryCommand;
 import com.cloud.baseai.application.audit.dto.AuditLogDTO;
 import com.cloud.baseai.application.audit.dto.AuditStatisticsDTO;
 import com.cloud.baseai.application.audit.dto.PageResultDTO;
-import com.cloud.baseai.application.user.service.UserInfoService;
 import com.cloud.baseai.domain.audit.model.SysAuditLog;
 import com.cloud.baseai.domain.audit.repository.SysAuditLogRepository;
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
+import com.cloud.baseai.domain.user.service.UserInfoService;
+import com.cloud.baseai.infrastructure.exception.AuditException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.i18n.MessageManager;
 import com.cloud.baseai.infrastructure.utils.AuditUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
@@ -163,7 +165,7 @@ public class AuditQueryAppService {
 
         } catch (Exception e) {
             log.error("审计日志查询失败: command={}", command, e);
-            throw new AuditServiceException("AUDIT_QUERY_FAILED", "审计日志查询失败: " + e.getMessage(), e);
+            throw AuditException.queryFailed(e.getMessage());
         }
     }
 
@@ -214,7 +216,7 @@ public class AuditQueryAppService {
 
         } catch (Exception e) {
             log.error("安全事件查询失败", e);
-            throw new AuditServiceException("SECURITY_EVENTS_QUERY_FAILED", "安全事件查询失败", e);
+            throw AuditException.securityEventsQueryFailed();
         }
     }
 
@@ -260,7 +262,7 @@ public class AuditQueryAppService {
         } catch (Exception e) {
             log.error("对象历史查询失败: targetType={}, targetId={}",
                     command.targetType(), command.targetId(), e);
-            throw new AuditServiceException("OBJECT_HISTORY_QUERY_FAILED", "对象历史查询失败", e);
+            throw AuditException.objectHistoryQueryFailed(command.targetType(), command.targetId());
         }
     }
 
@@ -316,7 +318,7 @@ public class AuditQueryAppService {
 
         } catch (Exception e) {
             log.error("审计统计计算失败: tenantId={}", tenantId, e);
-            throw new AuditServiceException("AUDIT_STATISTICS_FAILED", "审计统计计算失败", e);
+            throw AuditException.statisticsFailed(tenantId);
         }
     }
 
@@ -365,7 +367,7 @@ public class AuditQueryAppService {
 
         } catch (Exception e) {
             log.error("用户审计摘要生成失败: userId={}", userId, e);
-            throw new AuditServiceException("USER_AUDIT_SUMMARY_FAILED", "用户审计摘要生成失败", e);
+            throw AuditException.userAuditSummaryFailed(userId, tenantId);
         }
     }
 
@@ -401,7 +403,7 @@ public class AuditQueryAppService {
 
         } catch (Exception e) {
             log.error("审计报告导出失败: command={}", command, e);
-            throw new AuditServiceException("AUDIT_REPORT_EXPORT_FAILED", "审计报告导出失败", e);
+            throw AuditException.reportExportFailed(command.reportType());
         }
     }
 
@@ -412,21 +414,21 @@ public class AuditQueryAppService {
      */
     private void validateQueryCommand(AuditQueryCommand command) {
         if (command.tenantId() == null) {
-            throw new IllegalArgumentException("租户ID不能为空");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_011));
         }
 
         if (command.page() < 0) {
-            throw new IllegalArgumentException("页码不能小于0");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_019));
         }
 
         if (command.size() <= 0 || command.size() > 100) {
-            throw new IllegalArgumentException("页大小必须在1-100之间");
+            throw AuditException.pageSizeOutOfRange(command.size());
         }
 
         // 验证时间范围
         if (command.startTime() != null && command.endTime() != null) {
             if (command.startTime().isAfter(command.endTime())) {
-                throw new IllegalArgumentException("开始时间不能晚于结束时间");
+                throw AuditException.invalidTimeRange();
             }
 
             // 检查时间范围是否过大（超过1年）

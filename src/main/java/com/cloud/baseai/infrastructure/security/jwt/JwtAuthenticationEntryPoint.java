@@ -1,7 +1,7 @@
 package com.cloud.baseai.infrastructure.security.jwt;
 
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
-import com.cloud.baseai.infrastructure.web.response.ErrorResponse;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ErrorResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -94,12 +94,16 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
         // 分析认证失败的具体原因
         ErrorDetails errorDetails = analyzeAuthenticationFailure(authException, request);
 
+        ErrorResponse responses = new ErrorResponse(errorDetails.errorCode, errorDetails.userMessage, errorDetails.details, System.currentTimeMillis(), null);
+        ApiResult.error(responses);
         // 构建标准化的API错误响应
         ApiResult<Void> errorResponse = ApiResult.error(new ErrorResponse(
                 errorDetails.errorCode,
                 errorDetails.userMessage,
                 errorDetails.details,
-                System.currentTimeMillis()));
+                System.currentTimeMillis(),
+                null)
+        );
 
         // 设置HTTP响应头
         response.setStatus(errorDetails.httpStatus);

@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.security.SecureRandom;
@@ -63,11 +62,11 @@ public final class SecurityUtils {
      */
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    /**
-     * 默认的密码编码器
-     * <p>使用BCrypt算法，它是目前最推荐的密码哈希算法之一</p>
-     */
-    private static final PasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder(12);
+//    /**
+//     * 默认的密码编码器
+//     * <p>使用BCrypt算法，它是目前最推荐的密码哈希算法之一</p>
+//     */
+//    private static final PasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder(12);
 
     /**
      * 私有构造函数，防止实例化
@@ -289,13 +288,14 @@ public final class SecurityUtils {
      * 即使数据库泄露，攻击者也无法直接获取用户密码。</p>
      *
      * @param rawPassword 原始密码
+     * @param encoder     密码编码器
      * @return 加密后的密码
      */
-    public static String encodePassword(String rawPassword) {
+    public static String encodePassword(String rawPassword, PasswordEncoder encoder) {
         if (rawPassword == null || rawPassword.isEmpty()) {
             throw new IllegalArgumentException("密码不能为空");
         }
-        return PASSWORD_ENCODER.encode(rawPassword);
+        return encoder.encode(rawPassword);
     }
 
     /**
@@ -306,14 +306,15 @@ public final class SecurityUtils {
      *
      * @param rawPassword     用户输入的原始密码
      * @param encodedPassword 存储的加密密码
+     * @param encoder         密码编码器
      * @return 如果密码匹配返回true，否则返回false
      */
-    public static boolean matchesPassword(String rawPassword, String encodedPassword) {
+    public static boolean matchesPassword(String rawPassword, String encodedPassword, PasswordEncoder encoder) {
         if (rawPassword == null || encodedPassword == null) {
             return false;
         }
         try {
-            return PASSWORD_ENCODER.matches(rawPassword, encodedPassword);
+            return encoder.matches(rawPassword, encodedPassword);
         } catch (Exception e) {
             log.error("密码验证失败", e);
             return false;

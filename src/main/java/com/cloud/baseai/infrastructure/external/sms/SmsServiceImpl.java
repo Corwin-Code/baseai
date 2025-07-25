@@ -1,8 +1,10 @@
 package com.cloud.baseai.infrastructure.external.sms;
 
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.SmsException;
 import com.cloud.baseai.infrastructure.external.sms.model.BatchSmsResult;
 import com.cloud.baseai.infrastructure.external.sms.model.SmsStatus;
-import com.cloud.baseai.infrastructure.exception.SmsServiceException;
+import com.cloud.baseai.infrastructure.i18n.MessageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -115,15 +117,15 @@ public class SmsServiceImpl implements SmsService {
      */
     @Override
     public void sendVerificationCode(String phoneNumber, String verificationCode,
-                                     String purpose, int expireMinutes) throws SmsServiceException {
+                                     String purpose, int expireMinutes) throws SmsException {
 
         // 第一步：基础参数验证，这是最基本的防护措施
         validatePhoneNumber(phoneNumber);
         validateVerificationCode(verificationCode);
-        validateStringParameter(purpose, "发送目的不能为空");
+        validateStringParameter(purpose, MessageManager.getMessage(ErrorCode.EXT_SMS_019));
 
         if (expireMinutes <= 0 || expireMinutes > 30) {
-            throw new IllegalArgumentException("验证码有效期必须在1-30分钟之间");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.EXT_SMS_018));
         }
 
         log.info("准备发送验证码短信: phone={}, purpose={}, expireMinutes={}",
@@ -144,12 +146,11 @@ public class SmsServiceImpl implements SmsService {
 
             log.info("验证码短信发送成功: phone={}, messageId={}", phoneNumber, messageId);
 
-        } catch (SmsServiceException e) {
+        } catch (SmsException e) {
             throw e; // 重新抛出业务异常
         } catch (Exception e) {
-            String errorMessage = "发送验证码短信失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new SmsServiceException("VERIFICATION_CODE_FAILED", errorMessage, e);
+            log.error("发送验证码短信失败: {}", e.getMessage(), e);
+            throw SmsException.verificationCodeSendFailed(e.getMessage());
         }
     }
 
@@ -162,13 +163,13 @@ public class SmsServiceImpl implements SmsService {
      */
     @Override
     public void sendSecurityAlert(String phoneNumber, String loginLocation,
-                                  OffsetDateTime loginTime, String deviceInfo) throws SmsServiceException {
+                                  OffsetDateTime loginTime, String deviceInfo) throws SmsException {
 
         validatePhoneNumber(phoneNumber);
-        validateStringParameter(loginLocation, "登录地点不能为空");
+        validateStringParameter(loginLocation, MessageManager.getMessage(ErrorCode.EXT_SMS_021));
 
         if (loginTime == null) {
-            throw new IllegalArgumentException("登录时间不能为空");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.EXT_SMS_020));
         }
 
         log.info("准备发送安全警报短信: phone={}, location={}", phoneNumber, loginLocation);
@@ -189,9 +190,8 @@ public class SmsServiceImpl implements SmsService {
             log.info("安全警报短信发送成功: phone={}, messageId={}", phoneNumber, messageId);
 
         } catch (Exception e) {
-            String errorMessage = "发送安全警报短信失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new SmsServiceException("SECURITY_ALERT_FAILED", errorMessage, e);
+            log.error("发送安全警报短信失败: {}", e.getMessage(), e);
+            throw new SmsException(ErrorCode.EXT_SMS_002, e);
         }
     }
 
@@ -203,7 +203,7 @@ public class SmsServiceImpl implements SmsService {
      */
     @Override
     public void sendNotification(String phoneNumber, String notificationType, String content)
-            throws SmsServiceException {
+            throws SmsException {
 
         validatePhoneNumber(phoneNumber);
         validateStringParameter(notificationType, "通知类型不能为空");
@@ -229,9 +229,8 @@ public class SmsServiceImpl implements SmsService {
             log.info("业务通知短信发送成功: phone={}, messageId={}", phoneNumber, messageId);
 
         } catch (Exception e) {
-            String errorMessage = "发送业务通知短信失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new SmsServiceException("NOTIFICATION_FAILED", errorMessage, e);
+            log.error("发送业务通知短信失败: {}", e.getMessage(), e);
+            throw SmsException.notificationFailed(notificationType, e.getMessage());
         }
     }
 
@@ -243,7 +242,7 @@ public class SmsServiceImpl implements SmsService {
      */
     @Override
     public void sendTemplateMessage(String phoneNumber, String templateCode,
-                                    Map<String, String> templateParams) throws SmsServiceException {
+                                    Map<String, String> templateParams) throws SmsException {
 
         validatePhoneNumber(phoneNumber);
         validateStringParameter(templateCode, "模板编码不能为空");
@@ -267,9 +266,8 @@ public class SmsServiceImpl implements SmsService {
                     phoneNumber, templateCode, messageId);
 
         } catch (Exception e) {
-            String errorMessage = "发送模板短信失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new SmsServiceException("TEMPLATE_FAILED", errorMessage, e);
+            log.error("发送模板短信失败: {}", e.getMessage(), e);
+            throw SmsException.templateSendFailed(templateCode, e.getMessage());
         }
     }
 
@@ -281,7 +279,7 @@ public class SmsServiceImpl implements SmsService {
      */
     @Override
     public BatchSmsResult sendBatchMessages(List<String> phoneNumbers, String content,
-                                            OffsetDateTime sendTime) throws SmsServiceException {
+                                            OffsetDateTime sendTime) throws SmsException {
 
         if (phoneNumbers == null || phoneNumbers.isEmpty()) {
             throw new IllegalArgumentException("手机号列表不能为空");
@@ -319,9 +317,8 @@ public class SmsServiceImpl implements SmsService {
             return executeBatchSending(validNumbers, content);
 
         } catch (Exception e) {
-            String errorMessage = "批量发送短信失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new SmsServiceException("BATCH_FAILED", errorMessage, e);
+            log.error("批量发送短信失败: {}", e.getMessage(), e);
+            throw SmsException.batchSendFailed(content, e.getMessage());
         }
     }
 
@@ -332,7 +329,7 @@ public class SmsServiceImpl implements SmsService {
      * 短信服务商的API支持，不同服务商的接口可能有所不同。</p>
      */
     @Override
-    public SmsStatus querySmsStatus(String messageId) throws SmsServiceException {
+    public SmsStatus querySmsStatus(String messageId) throws SmsException {
         validateStringParameter(messageId, "消息ID不能为空");
 
         try {
@@ -355,7 +352,7 @@ public class SmsServiceImpl implements SmsService {
 
         } catch (Exception e) {
             log.error("查询短信状态失败: messageId={}", messageId, e);
-            throw new SmsServiceException("QUERY_STATUS_FAILED", "查询短信状态失败", e);
+            throw SmsException.queryStatusFailed(messageId);
         }
     }
 
@@ -372,14 +369,14 @@ public class SmsServiceImpl implements SmsService {
      * 获取剩余短信额度
      */
     @Override
-    public long getRemainingQuota() throws SmsServiceException {
+    public long getRemainingQuota() throws SmsException {
         try {
             // 这里应该调用服务商API查询余额
             // 简化实现，返回模拟数据
             return queryQuotaFromProvider();
         } catch (Exception e) {
-            log.error("查询短信余额失败", e);
-            throw new SmsServiceException("QUERY_QUOTA_FAILED", "查询短信余额失败", e);
+            log.error("查询短信余额失败: {}", e.getMessage(), e);
+            throw SmsException.quotaQueryFailed();
         }
     }
 
@@ -404,10 +401,10 @@ public class SmsServiceImpl implements SmsService {
      * <p>这是短信发送前的重要安全措施，包括频率限制、黑名单检查、重复发送检测等。
      * 每一项检查都有其特定的目的，共同构成了完整的安全防护体系。</p>
      */
-    private void performSecurityChecks(String phoneNumber, String messageType) throws SmsServiceException {
+    private void performSecurityChecks(String phoneNumber, String messageType) throws SmsException {
         // 1. 检查黑名单
         if (isBlacklisted(phoneNumber)) {
-            throw new SmsServiceException("PHONE_BLACKLISTED", "手机号在黑名单中");
+            throw SmsException.phoneBlacklisted(phoneNumber);
         }
 
         // 2. 检查发送频率
@@ -425,7 +422,7 @@ public class SmsServiceImpl implements SmsService {
      * <p>使用Redis实现分布式的频率限制。我们设置了三个级别的限制：
      * 分钟级、小时级和天级，形成多层防护。</p>
      */
-    private void checkSendingLimit(String phoneNumber) throws SmsServiceException {
+    private void checkSendingLimit(String phoneNumber) throws SmsException {
         String minuteKey = SMS_LIMIT_PREFIX + phoneNumber + ":minute:" +
                 (System.currentTimeMillis() / 60000);
         String hourKey = SMS_LIMIT_PREFIX + phoneNumber + ":hour:" +
@@ -444,19 +441,17 @@ public class SmsServiceImpl implements SmsService {
         redisTemplate.expire(dayKey, 1, TimeUnit.DAYS);
 
         // 检查是否超出限制
-        if (minuteCount > limitPerMinute) {
-            throw new SmsServiceException("RATE_LIMIT_EXCEEDED",
-                    "发送频率过高，请稍后再试（每分钟限制" + limitPerMinute + "条）");
+        if (minuteCount != null && minuteCount > limitPerMinute) {
+
+            throw new SmsException(ErrorCode.EXT_SMS_009, limitPerMinute);
         }
 
-        if (hourCount > limitPerHour) {
-            throw new SmsServiceException("RATE_LIMIT_EXCEEDED",
-                    "发送频率过高，请稍后再试（每小时限制" + limitPerHour + "条）");
+        if (hourCount != null && hourCount > limitPerHour) {
+            throw new SmsException(ErrorCode.EXT_SMS_010, limitPerHour);
         }
 
-        if (dayCount > limitPerDay) {
-            throw new SmsServiceException("RATE_LIMIT_EXCEEDED",
-                    "今日发送次数已达上限（每天限制" + limitPerDay + "条）");
+        if (dayCount != null && dayCount > limitPerDay) {
+            throw SmsException.rateLimitExceeded(limitPerDay);
         }
     }
 
@@ -466,15 +461,14 @@ public class SmsServiceImpl implements SmsService {
      * <p>防止用户在短时间内重复点击发送按钮，造成不必要的费用。
      * 我们记录最近发送的验证码，如果检测到重复请求就拒绝发送。</p>
      */
-    private void checkDuplicateSending(String phoneNumber) throws SmsServiceException {
+    private void checkDuplicateSending(String phoneNumber) throws SmsException {
         String duplicateKey = SMS_DUPLICATE_PREFIX + phoneNumber;
         String lastSendTime = redisTemplate.opsForValue().get(duplicateKey);
 
         if (lastSendTime != null) {
             long timeDiff = System.currentTimeMillis() - Long.parseLong(lastSendTime);
             if (timeDiff < (long) duplicateCheckMinutes * 60 * 1000) {
-                throw new SmsServiceException("DUPLICATE_SENDING",
-                        "请不要重复发送验证码，请等待" + duplicateCheckMinutes + "分钟后再试");
+                throw SmsException.duplicateSending(duplicateCheckMinutes);
             }
         }
 
@@ -532,7 +526,7 @@ public class SmsServiceImpl implements SmsService {
                 case "tencent" -> sendViaTencent(phoneNumber, content, messageId);
                 case "huawei" -> sendViaHuawei(phoneNumber, content, messageId);
                 case "mock" -> sendViaMock(phoneNumber, content, messageId); // 用于测试
-                default -> throw new Exception("不支持的短信服务商: " + smsProvider);
+                default -> throw SmsException.providerUnavailable(smsProvider);
             }
 
             // 更新状态为已发送
@@ -648,13 +642,13 @@ public class SmsServiceImpl implements SmsService {
 
     private void validatePhoneNumber(String phoneNumber) {
         if (!isValidPhoneNumber(phoneNumber)) {
-            throw new IllegalArgumentException("手机号格式不正确: " + phoneNumber);
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.EXT_SMS_016, phoneNumber));
         }
     }
 
     private void validateVerificationCode(String code) {
         if (!StringUtils.hasText(code) || !VERIFICATION_CODE_PATTERN.matcher(code).matches()) {
-            throw new IllegalArgumentException("验证码格式不正确，应为4-6位数字");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.EXT_SMS_017));
         }
     }
 

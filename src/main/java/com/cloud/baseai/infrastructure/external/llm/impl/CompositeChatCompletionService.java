@@ -1,7 +1,7 @@
 package com.cloud.baseai.infrastructure.external.llm.impl;
 
 import com.cloud.baseai.infrastructure.config.LLMServiceProperties;
-import com.cloud.baseai.infrastructure.exception.ChatCompletionException;
+import com.cloud.baseai.infrastructure.exception.ChatException;
 import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
 
 import java.util.HashMap;
@@ -48,7 +48,7 @@ public class CompositeChatCompletionService implements ChatCompletionService {
 
         try {
             return service.generateCompletion(context);
-        } catch (ChatCompletionException e) {
+        } catch (ChatException e) {
             // 实现故障转移逻辑
             if (properties.isFailoverEnabled() && service != defaultService) {
                 return defaultService.generateCompletion(context);

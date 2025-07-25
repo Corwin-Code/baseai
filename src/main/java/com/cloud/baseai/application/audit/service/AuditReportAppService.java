@@ -2,10 +2,10 @@ package com.cloud.baseai.application.audit.service;
 
 import com.cloud.baseai.application.audit.command.AuditQueryCommand;
 import com.cloud.baseai.application.audit.dto.AuditLogDTO;
-import com.cloud.baseai.application.audit.dto.AuditStatisticsDTO;
 import com.cloud.baseai.application.audit.dto.AuditReportResult;
+import com.cloud.baseai.application.audit.dto.AuditStatisticsDTO;
 import com.cloud.baseai.domain.audit.repository.SysAuditLogRepository;
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
+import com.cloud.baseai.infrastructure.exception.AuditException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,7 +87,7 @@ public class AuditReportAppService {
      *
      * @param command 报告导出命令，包含所有必要的参数
      * @return 报告生成结果，包含报告ID和下载链接
-     * @throws AuditServiceException 当报告生成失败时抛出
+     * @throws AuditException 当报告生成失败时抛出
      */
     @Async("auditTaskExecutor")
     public CompletableFuture<AuditReportResult> generateReport(
@@ -130,8 +130,7 @@ public class AuditReportAppService {
             } catch (Exception e) {
                 log.error("生成审计报告失败: reportId={}, type={}",
                         reportId, command.reportType(), e);
-                throw new AuditServiceException("REPORT_GENERATION_FAILED",
-                        "报告生成失败: " + e.getMessage(), e);
+                throw AuditException.reportGenerationFailed(command.reportType(), e.getMessage());
             }
         });
     }
@@ -176,8 +175,7 @@ public class AuditReportAppService {
 
         } catch (Exception e) {
             log.error("生成快速摘要报告失败: tenantId={}", tenantId, e);
-            throw new AuditServiceException("QUICK_SUMMARY_FAILED",
-                    "生成摘要报告失败", e);
+            throw AuditException.quickSummaryFailed(tenantId);
         }
     }
 
@@ -221,8 +219,7 @@ public class AuditReportAppService {
 
         } catch (Exception e) {
             log.error("生成安全分析报告失败: tenantId={}", tenantId, e);
-            throw new AuditServiceException("SECURITY_ANALYSIS_FAILED",
-                    "生成安全分析报告失败", e);
+            throw AuditException.securityAnalysisFailed(tenantId);
         }
     }
 
@@ -263,8 +260,7 @@ public class AuditReportAppService {
         } catch (Exception e) {
             log.error("生成合规检查报告失败: tenantId={}, regulation={}",
                     tenantId, regulation, e);
-            throw new AuditServiceException("COMPLIANCE_REPORT_FAILED",
-                    "生成合规报告失败", e);
+            throw AuditException.complianceReportFailed(tenantId, regulation);
         }
     }
 
@@ -292,12 +288,12 @@ public class AuditReportAppService {
 
         // 检查报告类型是否支持
         if (!reportGenerators.containsKey(command.reportType())) {
-            throw new IllegalArgumentException("不支持的报告类型: " + command.reportType());
+            throw AuditException.unsupportedReportType(command.reportType());
         }
 
         // 检查时间范围是否合理
         if (command.startTime().isAfter(command.endTime())) {
-            throw new IllegalArgumentException("开始时间不能晚于结束时间");
+            throw AuditException.invalidTimeRange();
         }
     }
 
@@ -307,8 +303,7 @@ public class AuditReportAppService {
     private ReportGenerator getReportGenerator(String reportType) {
         ReportGenerator generator = reportGenerators.get(reportType);
         if (generator == null) {
-            throw new AuditServiceException("GENERATOR_NOT_FOUND",
-                    "找不到报告生成器: " + reportType);
+            throw AuditException.generatorNotFound(reportType);
         }
         return generator;
     }
@@ -347,8 +342,7 @@ public class AuditReportAppService {
             );
 
         } catch (Exception e) {
-            throw new AuditServiceException("DATA_COLLECTION_FAILED",
-                    "收集报告数据失败", e);
+            throw AuditException.dataCollectionFailed();
         }
     }
 
@@ -368,8 +362,7 @@ public class AuditReportAppService {
             return downloadUrl;
 
         } catch (Exception e) {
-            throw new AuditServiceException("REPORT_SAVE_FAILED",
-                    "保存报告内容失败", e);
+            throw AuditException.saveReportFailed(reportId);
         }
     }
 

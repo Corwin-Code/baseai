@@ -3,7 +3,7 @@ package com.cloud.baseai.adapter.web.user;
 import com.cloud.baseai.application.user.command.*;
 import com.cloud.baseai.application.user.dto.*;
 import com.cloud.baseai.application.user.service.UserAppService;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -29,9 +29,8 @@ import java.util.List;
 /**
  * <h1>用户管理REST控制器</h1>
  *
- * <p>这个控制器是整个用户管理系统的门户，它就像一个专业的人力资源部门，
- * 负责处理用户注册、租户管理、权限分配等各种人员管理事务。在多租户SaaS系统中，
- * 用户管理不仅仅是简单的增删改查，还涉及复杂的权限模型和组织架构管理。</p>
+ * <p>这个控制器是整个用户管理系统的门户，它负责处理用户注册、租户管理、权限分配等各种人员管理事务。
+ * 在多租户SaaS系统中，用户管理不仅仅是简单的增删改查，还涉及复杂的权限模型和组织架构管理。</p>
  *
  * <p><b>多租户架构的精髓：</b></p>
  * <p>想象一下，我们的系统就像一座大型的商务大厦，每个租户就是其中的一个公司。

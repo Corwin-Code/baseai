@@ -3,7 +3,7 @@ package com.cloud.baseai.adapter.web.auth;
 import com.cloud.baseai.infrastructure.security.UserPrincipal;
 import com.cloud.baseai.infrastructure.security.jwt.JwtUtils;
 import com.cloud.baseai.infrastructure.security.service.CustomUserDetailsService;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;

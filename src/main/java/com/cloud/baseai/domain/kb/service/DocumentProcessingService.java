@@ -2,7 +2,8 @@ package com.cloud.baseai.domain.kb.service;
 
 import com.cloud.baseai.domain.kb.model.Chunk;
 import com.cloud.baseai.domain.kb.model.Document;
-import com.cloud.baseai.infrastructure.exception.DocumentParsingException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.KnowledgeBaseException;
 import com.cloud.baseai.infrastructure.utils.KbUtils;
 import lombok.Getter;
 import org.slf4j.Logger;
@@ -75,7 +76,7 @@ public class DocumentProcessingService {
      * @param content  待处理的文档内容
      * @param userId   操作用户ID，用于审计追踪
      * @return 分块后的知识块列表
-     * @throws DocumentParsingException 当文档结构无法解析时抛出
+     * @throws KnowledgeBaseException 当文档结构无法解析时抛出
      */
     public List<Chunk> splitIntoChunks(Document document, String content, Long userId) {
         if (content == null || content.trim().isEmpty()) {
@@ -112,7 +113,7 @@ public class DocumentProcessingService {
 
         } catch (Exception e) {
             log.error("文档分块处理失败: documentId={}", document.id(), e);
-            throw new DocumentParsingException("文档分块处理过程中发生错误: " + e.getMessage(), e);
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_024, e.getMessage(), e);
         }
     }
 

@@ -1,6 +1,7 @@
 package com.cloud.baseai.domain.audit.model;
 
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
+import com.cloud.baseai.infrastructure.exception.AuditException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -301,9 +302,9 @@ public record SysAuditLog(
      *
      * @param objectMapper JSON映射器
      * @return 解析后的Map对象，如果detail为null则返回空Map
-     * @throws AuditServiceException 当JSON解析失败时抛出
+     * @throws AuditException 当JSON解析失败时抛出
      */
-    public Map<String, Object> parseDetailAsMap(ObjectMapper objectMapper) throws AuditServiceException {
+    public Map<String, Object> parseDetailAsMap(ObjectMapper objectMapper) throws AuditException {
         if (detail == null || detail.trim().isEmpty()) {
             return Map.of();
         }
@@ -313,8 +314,7 @@ public record SysAuditLog(
             Map<String, Object> result = objectMapper.readValue(detail, Map.class);
             return result;
         } catch (JsonProcessingException e) {
-            throw new AuditServiceException("DETAIL_PARSE_ERROR",
-                    "解析审计日志详细信息失败: " + e.getMessage(), e);
+            throw AuditException.businessError(ErrorCode.BIZ_AUDIT_030, e);
         }
     }
 

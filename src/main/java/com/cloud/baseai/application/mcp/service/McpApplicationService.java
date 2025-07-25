@@ -12,7 +12,10 @@ import com.cloud.baseai.domain.mcp.repository.ToolAuthRepository;
 import com.cloud.baseai.domain.mcp.repository.ToolCallLogRepository;
 import com.cloud.baseai.domain.mcp.repository.ToolRepository;
 import com.cloud.baseai.domain.mcp.service.ToolExecutionService;
-import com.cloud.baseai.infrastructure.exception.McpException;
+import com.cloud.baseai.infrastructure.constants.McpConstants;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.McpToolException;
 import com.cloud.baseai.infrastructure.persistence.mcp.entity.enums.ToolCallStatus;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -66,7 +69,7 @@ public class McpApplicationService {
         try {
             // 检查工具代码唯一性
             if (toolRepo.existsByCode(cmd.code())) {
-                throw new McpException("DUPLICATE_TOOL_CODE", "工具代码已存在: " + cmd.code());
+                throw new McpToolException(ErrorCode.BIZ_MCP_002, cmd.code());
             }
 
             // 验证工具配置
@@ -90,10 +93,14 @@ public class McpApplicationService {
             return toToolDTO(tool);
 
         } catch (Exception e) {
-            if (e instanceof McpException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new McpException("TOOL_REGISTER_ERROR", "工具注册失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_MCP_004)
+                    .cause(e)
+                    .context("operation", "registerTool")
+                    .context("toolName", cmd.name())
+                    .build();
         }
     }
 
@@ -117,14 +124,18 @@ public class McpApplicationService {
             return PageResultDTO.of(toolDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new McpException("TOOL_LIST_ERROR", "获取工具列表失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_MCP_009)
+                    .cause(e)
+                    .context("operation", "listTools")
+                    .context("toolType", type)
+                    .build();
         }
     }
 
     public ToolDetailDTO getToolDetail(String toolCode) {
         try {
             Tool tool = toolRepo.findByCode(toolCode)
-                    .orElseThrow(() -> new McpException("TOOL_NOT_FOUND", "工具不存在: " + toolCode));
+                    .orElseThrow(() -> McpToolException.toolNotFound(toolCode));
 
             // 获取授权租户数量
             int authorizedTenants = toolAuthRepo.countByToolId(tool.id());
@@ -151,10 +162,14 @@ public class McpApplicationService {
             );
 
         } catch (Exception e) {
-            if (e instanceof McpException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new McpException("TOOL_DETAIL_ERROR", "获取工具详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_MCP_010)
+                    .cause(e)
+                    .context("operation", "getToolDetail")
+                    .context("toolCode", toolCode)
+                    .build();
         }
     }
 
@@ -162,7 +177,7 @@ public class McpApplicationService {
     public ToolDTO updateTool(String toolCode, RegisterToolCommand cmd) {
         try {
             Tool tool = toolRepo.findByCode(toolCode)
-                    .orElseThrow(() -> new McpException("TOOL_NOT_FOUND", "工具不存在: " + toolCode));
+                    .orElseThrow(() -> McpToolException.toolNotFound(toolCode));
 
             // 验证更新配置
             validateToolConfig(cmd);
@@ -182,10 +197,14 @@ public class McpApplicationService {
             return toToolDTO(tool);
 
         } catch (Exception e) {
-            if (e instanceof McpException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new McpException("TOOL_UPDATE_ERROR", "工具更新失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_MCP_005)
+                    .cause(e)
+                    .context("operation", "updateTool")
+                    .context("toolCode", toolCode)
+                    .build();
         }
     }
 
@@ -195,12 +214,12 @@ public class McpApplicationService {
     public ToolAuthDTO authorizeTenantForTool(AuthorizeTenantForToolCommand cmd) {
         try {
             Tool tool = toolRepo.findByCode(cmd.toolCode())
-                    .orElseThrow(() -> new McpException("TOOL_NOT_FOUND", "工具不存在: " + cmd.toolCode()));
+                    .orElseThrow(() -> McpToolException.toolNotFound(cmd.toolCode()));
 
             // 检查是否已经授权
             Optional<ToolAuth> existingAuth = toolAuthRepo.findByToolIdAndTenantId(tool.id(), cmd.tenantId());
             if (existingAuth.isPresent()) {
-                throw new McpException("ALREADY_AUTHORIZED", "租户已被授权使用此工具");
+                throw new McpToolException(ErrorCode.BIZ_AUTH_001);
             }
 
             // 创建授权
@@ -215,10 +234,14 @@ public class McpApplicationService {
             return toToolAuthDTO(auth, tool);
 
         } catch (Exception e) {
-            if (e instanceof McpException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new McpException("AUTHORIZE_ERROR", "租户授权失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_AUTH_005)
+                    .cause(e)
+                    .context("operation", "authorizeTenantForTool")
+                    .context("toolCode", cmd.toolCode())
+                    .build();
         }
     }
 
@@ -234,7 +257,11 @@ public class McpApplicationService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            throw new McpException("GET_TENANT_TOOLS_ERROR", "获取租户工具失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_AUTH_007)
+                    .cause(e)
+                    .context("operation", "getTenantAuthorizedTools")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -242,18 +269,22 @@ public class McpApplicationService {
     public void revokeTenantAuthorization(String toolCode, Long tenantId) {
         try {
             Tool tool = toolRepo.findByCode(toolCode)
-                    .orElseThrow(() -> new McpException("TOOL_NOT_FOUND", "工具不存在: " + toolCode));
+                    .orElseThrow(() -> McpToolException.toolNotFound(toolCode));
 
             ToolAuth auth = toolAuthRepo.findByToolIdAndTenantId(tool.id(), tenantId)
-                    .orElseThrow(() -> new McpException("AUTHORIZATION_NOT_FOUND", "授权不存在"));
+                    .orElseThrow(() -> new McpToolException(ErrorCode.BIZ_AUTH_002));
 
             toolAuthRepo.delete(auth.toolId(), auth.tenantId());
 
         } catch (Exception e) {
-            if (e instanceof McpException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new McpException("REVOKE_ERROR", "撤销授权失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_AUTH_006)
+                    .cause(e)
+                    .context("operation", "revokeTenantAuthorization")
+                    .context("toolCode", toolCode)
+                    .build();
         }
     }
 
@@ -266,22 +297,26 @@ public class McpApplicationService {
         try {
             // 验证工具和授权
             Tool tool = toolRepo.findByCode(toolCode)
-                    .orElseThrow(() -> new McpException("TOOL_NOT_FOUND", "工具不存在: " + toolCode));
+                    .orElseThrow(() -> McpToolException.toolNotFound(toolCode));
 
             if (!tool.enabled()) {
-                throw new McpException("TOOL_DISABLED", "工具已禁用");
+                throw McpToolException.toolDisabled(toolCode, tool.code());
             }
 
             ToolAuth auth = toolAuthRepo.findByToolIdAndTenantId(tool.id(), cmd.tenantId())
-                    .orElseThrow(() -> new McpException("UNAUTHORIZED_TOOL_ACCESS", "租户未被授权使用此工具"));
+                    .orElseThrow(() -> new McpToolException(ErrorCode.BIZ_AUTH_003));
 
             if (!auth.enabled()) {
-                throw new McpException("AUTHORIZATION_DISABLED", "工具授权已禁用");
+                throw new McpToolException(ErrorCode.BIZ_AUTH_004);
             }
 
             // 检查配额
             if (auth.quotaLimit() != null && auth.quotaUsed() >= auth.quotaLimit()) {
-                throw new McpException("QUOTA_EXCEEDED", "调用配额已用完");
+                throw McpToolException.quotaExceeded(
+                        String.valueOf(cmd.tenantId()),
+                        auth.quotaUsed(),
+                        auth.quotaLimit()
+                );
             }
 
             // 创建调用日志
@@ -301,7 +336,7 @@ public class McpApplicationService {
                 executeToolAsync(tool, auth, callLog, cmd);
                 return new ToolExecutionResultDTO(
                         callLog.id(),
-                        "STARTED",
+                        McpConstants.CallStatus.RUNNING,
                         null,
                         null,
                         System.currentTimeMillis() - startTime
@@ -312,17 +347,21 @@ public class McpApplicationService {
             }
 
         } catch (Exception e) {
-            if (e instanceof McpException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new McpException("TOOL_EXECUTION_ERROR", "工具执行失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_MCP_007)
+                    .cause(e)
+                    .context("operation", "executeTool")
+                    .context("toolCode", toolCode)
+                    .build();
         }
     }
 
     public PageResultDTO<ToolCallLogDTO> getExecutionHistory(String toolCode, Long tenantId, int page, int size) {
         try {
             Tool tool = toolRepo.findByCode(toolCode)
-                    .orElseThrow(() -> new McpException("TOOL_NOT_FOUND", "工具不存在: " + toolCode));
+                    .orElseThrow(() -> McpToolException.toolNotFound(toolCode));
 
             List<ToolCallLog> logs;
             long total;
@@ -342,10 +381,14 @@ public class McpApplicationService {
             return PageResultDTO.of(logDTOs, total, page, size);
 
         } catch (Exception e) {
-            if (e instanceof McpException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new McpException("GET_HISTORY_ERROR", "获取执行历史失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_MCP_015)
+                    .cause(e)
+                    .context("operation", "getExecutionHistory")
+                    .context("toolCode", toolCode)
+                    .build();
         }
     }
 
@@ -358,8 +401,8 @@ public class McpApplicationService {
             int totalTools = (int) toolRepo.count();
             int enabledTools = toolRepo.countByEnabled(true);
             int totalExecutions = toolCallLogRepo.countSince(since);
-            int successfulExecutions = toolCallLogRepo.countByStatusSince("SUCCESS", since);
-            int failedExecutions = toolCallLogRepo.countByStatusSince("FAILED", since);
+            int successfulExecutions = toolCallLogRepo.countByStatusSince(McpConstants.CallStatus.SUCCESS, since);
+            int failedExecutions = toolCallLogRepo.countByStatusSince(McpConstants.CallStatus.FAILED, since);
 
             double successRate = totalExecutions > 0 ?
                     (double) successfulExecutions / totalExecutions : 0.0;
@@ -380,7 +423,11 @@ public class McpApplicationService {
             );
 
         } catch (Exception e) {
-            throw new McpException("STATISTICS_ERROR", "获取统计信息失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_MCP_016)
+                    .cause(e)
+                    .context("operation", "getToolStatistics")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -441,17 +488,17 @@ public class McpApplicationService {
     private void validateToolConfig(RegisterToolCommand cmd) {
         // 验证参数Schema
         if (cmd.paramSchema() != null && !isValidJsonSchema(cmd.paramSchema())) {
-            throw new McpException("INVALID_PARAM_SCHEMA", "参数Schema格式无效");
+            throw new McpToolException(ErrorCode.BIZ_MCP_011);
         }
 
         // 验证结果Schema
         if (cmd.resultSchema() != null && !isValidJsonSchema(cmd.resultSchema())) {
-            throw new McpException("INVALID_RESULT_SCHEMA", "结果Schema格式无效");
+            throw new McpToolException(ErrorCode.BIZ_MCP_012);
         }
 
         // 验证端点URL
         if ("HTTP".equals(cmd.type()) && (cmd.endpoint() == null || cmd.endpoint().trim().isEmpty())) {
-            throw new McpException("MISSING_ENDPOINT", "HTTP工具必须指定端点URL");
+            throw new McpToolException(ErrorCode.BIZ_MCP_013);
         }
     }
 
@@ -495,7 +542,7 @@ public class McpApplicationService {
 
             return new ToolExecutionResultDTO(
                     callLog.id(),
-                    "SUCCESS",
+                    McpConstants.CallStatus.SUCCESS,
                     result,
                     null,
                     duration
@@ -508,7 +555,7 @@ public class McpApplicationService {
 
             return new ToolExecutionResultDTO(
                     callLog.id(),
-                    "FAILED",
+                    McpConstants.CallStatus.FAILED,
                     null,
                     e.getMessage(),
                     duration

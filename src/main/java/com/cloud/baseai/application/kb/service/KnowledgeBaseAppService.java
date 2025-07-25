@@ -3,17 +3,18 @@ package com.cloud.baseai.application.kb.service;
 import com.cloud.baseai.application.kb.command.*;
 import com.cloud.baseai.application.kb.dto.*;
 import com.cloud.baseai.application.metrics.service.MetricsService;
-import com.cloud.baseai.application.user.service.UserInfoService;
 import com.cloud.baseai.domain.kb.model.*;
 import com.cloud.baseai.domain.kb.repository.*;
 import com.cloud.baseai.domain.kb.service.DocumentProcessingService;
 import com.cloud.baseai.domain.kb.service.VectorSearchService;
+import com.cloud.baseai.domain.user.service.UserInfoService;
 import com.cloud.baseai.infrastructure.config.KnowledgeBaseProperties;
-import com.cloud.baseai.infrastructure.exception.KbBusinessException;
-import com.cloud.baseai.infrastructure.exception.KbTechnicalException;
-import com.cloud.baseai.infrastructure.exception.VectorProcessingException;
+import com.cloud.baseai.infrastructure.constants.KbConstants;
+import com.cloud.baseai.infrastructure.constants.SystemConstants;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.KnowledgeBaseException;
 import com.cloud.baseai.infrastructure.external.llm.EmbeddingService;
-import com.cloud.baseai.infrastructure.utils.KbConstants;
 import com.cloud.baseai.infrastructure.utils.KbUtils;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -126,17 +127,11 @@ public class KnowledgeBaseAppService {
 
             Optional<Document> existingDoc = documentRepo.findBySha256(sha256);
             if (existingDoc.isPresent()) {
-                throw new KbBusinessException(
-                        "DUPLICATE_DOCUMENT_CONTENT",
-                        "文档内容已存在，标题：" + existingDoc.get().title()
-                );
+                throw new KnowledgeBaseException(ErrorCode.BIZ_KB_002, existingDoc.get().title());
             }
 
             if (documentRepo.existsByTenantIdAndTitle(cmd.tenantId(), cmd.title())) {
-                throw new KbBusinessException(
-                        "DUPLICATE_DOCUMENT_TITLE",
-                        "租户下已存在同名文档：" + cmd.title()
-                );
+                throw KnowledgeBaseException.duplicateDocumentTitle(cmd.title());
             }
 
             Document document = Document.create(
@@ -162,7 +157,7 @@ public class KnowledgeBaseAppService {
                 log.error("文档分块失败: documentId={}", document.id(), e);
                 document = document.updateParsingStatus(ParsingStatus.FAILED, 0);
                 documentRepo.save(document);
-                throw new KbTechnicalException("DOCUMENT_PARSING_ERROR", "文档分块处理失败", e);
+                throw new KnowledgeBaseException(ErrorCode.BIZ_KB_024);
             }
 
             document = document.updateParsingStatus(ParsingStatus.SUCCESS, chunks.size());
@@ -182,10 +177,14 @@ public class KnowledgeBaseAppService {
 
         } catch (Exception e) {
             recordMetrics("document.upload", startTime, false);
-            if (e instanceof KbBusinessException || e instanceof KbTechnicalException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("DOCUMENT_UPLOAD_ERROR", "文档上传失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_006)
+                    .cause(e)
+                    .context("operation", "uploadDocument")
+                    .context("title", cmd.title())
+                    .build();
         }
     }
 
@@ -210,7 +209,11 @@ public class KnowledgeBaseAppService {
             return PageResultDTO.of(documentDTOs, total, validPage, validSize);
 
         } catch (Exception e) {
-            throw new KbTechnicalException("DOCUMENT_LIST_ERROR", "文档列表查询失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_016)
+                    .cause(e)
+                    .context("operation", "listDocuments")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -222,10 +225,7 @@ public class KnowledgeBaseAppService {
 
         try {
             Document document = documentRepo.findById(documentId)
-                    .orElseThrow(() -> new KbBusinessException(
-                            "DOCUMENT_NOT_FOUND",
-                            KbConstants.ErrorMessages.DOCUMENT_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> KnowledgeBaseException.documentNotFound(String.valueOf(documentId)));
 
             String creatorName = null;
             if (userInfoService != null) {
@@ -258,10 +258,14 @@ public class KnowledgeBaseAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof KbBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("DOCUMENT_DETAIL_ERROR", "获取文档详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_015)
+                    .cause(e)
+                    .context("operation", "getDocumentDetail")
+                    .context("documentId", documentId)
+                    .build();
         }
     }
 
@@ -274,10 +278,7 @@ public class KnowledgeBaseAppService {
 
         try {
             Document document = documentRepo.findById(cmd.documentId())
-                    .orElseThrow(() -> new KbBusinessException(
-                            "DOCUMENT_NOT_FOUND",
-                            KbConstants.ErrorMessages.DOCUMENT_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> KnowledgeBaseException.documentNotFound(String.valueOf(cmd.documentId())));
 
             // 检查新标题是否与其他文档冲突
             Optional<Document> existingDoc = documentRepo.findByTenantId(document.tenantId(), 0, 1000)
@@ -286,10 +287,7 @@ public class KnowledgeBaseAppService {
                     .findFirst();
 
             if (existingDoc.isPresent()) {
-                throw new KbBusinessException(
-                        "DUPLICATE_DOCUMENT_TITLE",
-                        "租户下已存在同名文档：" + cmd.title()
-                );
+                throw KnowledgeBaseException.duplicateDocumentTitle(cmd.title());
             }
 
             Document updatedDocument = document.updateInfo(cmd.title(), cmd.langCode(), cmd.operatorId());
@@ -298,10 +296,14 @@ public class KnowledgeBaseAppService {
             return toDocumentDTO(updatedDocument);
 
         } catch (Exception e) {
-            if (e instanceof KbBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("DOCUMENT_UPDATE_ERROR", "更新文档信息失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_010)
+                    .cause(e)
+                    .context("operation", "updateDocumentInfo")
+                    .context("documentId", cmd.documentId())
+                    .build();
         }
     }
 
@@ -314,10 +316,7 @@ public class KnowledgeBaseAppService {
 
         try {
             Document document = documentRepo.findById(cmd.documentId())
-                    .orElseThrow(() -> new KbBusinessException(
-                            "DOCUMENT_NOT_FOUND",
-                            KbConstants.ErrorMessages.DOCUMENT_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> KnowledgeBaseException.documentNotFound(String.valueOf(cmd.documentId())));
 
             if (cmd.cascade()) {
                 // 级联删除知识块
@@ -336,10 +335,14 @@ public class KnowledgeBaseAppService {
             documentRepo.softDelete(cmd.documentId(), cmd.operatorId());
 
         } catch (Exception e) {
-            if (e instanceof KbBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("DOCUMENT_DELETE_ERROR", "删除文档失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_011)
+                    .cause(e)
+                    .context("operation", "deleteDocument")
+                    .context("documentId", cmd.documentId())
+                    .build();
         }
     }
 
@@ -378,7 +381,11 @@ public class KnowledgeBaseAppService {
 
         } catch (Exception e) {
             recordMetrics("search.vector", startTime, false);
-            throw new KbTechnicalException("VECTOR_SEARCH_ERROR", "向量搜索失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_021)
+                    .cause(e)
+                    .context("operation", "vectorSearch")
+                    .context("query", cmd.query())
+                    .build();
         }
     }
 
@@ -416,7 +423,11 @@ public class KnowledgeBaseAppService {
 
         } catch (Exception e) {
             recordMetrics("search.text", startTime, false);
-            throw new KbTechnicalException("TEXT_SEARCH_ERROR", "文本搜索失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_022)
+                    .cause(e)
+                    .context("operation", "textSearch")
+                    .context("keywords", cmd.keywords())
+                    .build();
         }
     }
 
@@ -455,7 +466,11 @@ public class KnowledgeBaseAppService {
 
         } catch (Exception e) {
             recordMetrics("search.hybrid", startTime, false);
-            throw new KbTechnicalException("HYBRID_SEARCH_ERROR", "混合搜索失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_023)
+                    .cause(e)
+                    .context("operation", "hybridSearch")
+                    .context("query", cmd.query())
+                    .build();
         }
     }
 
@@ -469,16 +484,10 @@ public class KnowledgeBaseAppService {
 
         try {
             Chunk chunk = chunkRepo.findById(chunkId)
-                    .orElseThrow(() -> new KbBusinessException(
-                            "CHUNK_NOT_FOUND",
-                            KbConstants.ErrorMessages.CHUNK_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> new KnowledgeBaseException(ErrorCode.BIZ_KB_017));
 
             Document document = documentRepo.findById(chunk.documentId())
-                    .orElseThrow(() -> new KbBusinessException(
-                            "DOCUMENT_NOT_FOUND",
-                            KbConstants.ErrorMessages.DOCUMENT_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> KnowledgeBaseException.documentNotFound(String.valueOf(chunk.documentId())));
 
             Set<Long> tagIds = chunkTagRepo.findTagIdsByChunkId(chunkId);
             List<ChunkDetailDTO.TagInfo> tagInfos = new ArrayList<>();
@@ -508,10 +517,14 @@ public class KnowledgeBaseAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof KbBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("CHUNK_DETAIL_ERROR", "获取知识块详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_025)
+                    .cause(e)
+                    .context("operation", "getChunkDetail")
+                    .context("chunkId", chunkId)
+                    .build();
         }
     }
 
@@ -525,27 +538,25 @@ public class KnowledgeBaseAppService {
         try {
             // 验证知识块存在
             chunkRepo.findById(cmd.chunkId())
-                    .orElseThrow(() -> new KbBusinessException(
-                            "CHUNK_NOT_FOUND",
-                            KbConstants.ErrorMessages.CHUNK_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> new KnowledgeBaseException(ErrorCode.BIZ_KB_017));
 
             // 验证标签存在
             List<Tag> tags = tagRepo.findByIds(new ArrayList<>(cmd.tagIds()));
             if (tags.size() != cmd.tagIds().size()) {
-                throw new KbBusinessException(
-                        "TAG_NOT_FOUND",
-                        "部分标签不存在"
-                );
+                throw new KnowledgeBaseException(ErrorCode.BIZ_KB_018);
             }
 
             chunkTagRepo.addTags(cmd.chunkId(), cmd.tagIds());
 
         } catch (Exception e) {
-            if (e instanceof KbBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("ADD_CHUNK_TAGS_ERROR", "添加知识块标签失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_028)
+                    .cause(e)
+                    .context("operation", "addChunkTags")
+                    .context("chunkId", cmd.chunkId())
+                    .build();
         }
     }
 
@@ -558,18 +569,19 @@ public class KnowledgeBaseAppService {
 
         try {
             chunkRepo.findById(chunkId)
-                    .orElseThrow(() -> new KbBusinessException(
-                            "CHUNK_NOT_FOUND",
-                            KbConstants.ErrorMessages.CHUNK_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> new KnowledgeBaseException(ErrorCode.BIZ_KB_017));
 
             chunkTagRepo.removeTags(chunkId, tagIds);
 
         } catch (Exception e) {
-            if (e instanceof KbBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("REMOVE_CHUNK_TAGS_ERROR", "移除知识块标签失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_029)
+                    .cause(e)
+                    .context("operation", "removeChunkTags")
+                    .context("chunkId", chunkId)
+                    .build();
         }
     }
 
@@ -585,10 +597,7 @@ public class KnowledgeBaseAppService {
         try {
             Optional<Tag> existingTag = tagRepo.findByName(cmd.name());
             if (existingTag.isPresent()) {
-                throw new KbBusinessException(
-                        "DUPLICATE_TAG_NAME",
-                        "标签名称已存在：" + cmd.name()
-                );
+                throw new KnowledgeBaseException(ErrorCode.BIZ_KB_027, cmd.name());
             }
 
             Tag tag = Tag.create(cmd.name(), cmd.remark(), cmd.operatorId());
@@ -597,10 +606,14 @@ public class KnowledgeBaseAppService {
             return new TagDTO(tag.id(), tag.name(), tag.remark());
 
         } catch (Exception e) {
-            if (e instanceof KbBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new KbTechnicalException("CREATE_TAG_ERROR", "创建标签失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_030)
+                    .cause(e)
+                    .context("operation", "createTag")
+                    .context("name", cmd.name())
+                    .build();
         }
     }
 
@@ -633,7 +646,11 @@ public class KnowledgeBaseAppService {
             return PageResultDTO.of(tagDTOs, total, validPage, validSize);
 
         } catch (Exception e) {
-            throw new KbTechnicalException("LIST_TAGS_ERROR", "查询标签列表失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_031)
+                    .cause(e)
+                    .context("operation", "listTags")
+                    .context("search", search)
+                    .build();
         }
     }
 
@@ -656,7 +673,10 @@ public class KnowledgeBaseAppService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            throw new KbTechnicalException("GET_POPULAR_TAGS_ERROR", "获取热门标签失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_032)
+                    .cause(e)
+                    .context("operation", "getPopularTags")
+                    .build();
         }
     }
 
@@ -672,10 +692,7 @@ public class KnowledgeBaseAppService {
 
         try {
             Document document = documentRepo.findById(cmd.documentId())
-                    .orElseThrow(() -> new KbBusinessException(
-                            "DOCUMENT_NOT_FOUND",
-                            KbConstants.ErrorMessages.DOCUMENT_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> KnowledgeBaseException.documentNotFound(String.valueOf(cmd.documentId())));
 
             List<Chunk> chunks = chunkRepo.findByDocumentId(cmd.documentId());
             if (chunks.isEmpty()) {
@@ -704,7 +721,11 @@ public class KnowledgeBaseAppService {
 
         } catch (Exception e) {
             recordMetrics("vector.regeneration", startTime, false);
-            throw new KbTechnicalException("VECTOR_REGENERATION_ERROR", "向量重新生成失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_019)
+                    .cause(e)
+                    .context("operation", "regenerateEmbeddings")
+                    .context("documentId", cmd.documentId())
+                    .build();
         }
     }
 
@@ -740,7 +761,11 @@ public class KnowledgeBaseAppService {
             );
 
         } catch (Exception e) {
-            throw new KbTechnicalException("BATCH_VECTOR_GENERATION_ERROR", "批量向量生成失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_020)
+                    .cause(e)
+                    .context("operation", "batchGenerateEmbeddings")
+                    .context("documentIds", cmd.documentIds())
+                    .build();
         }
     }
 
@@ -799,7 +824,11 @@ public class KnowledgeBaseAppService {
             );
 
         } catch (Exception e) {
-            throw new KbTechnicalException("GET_STATISTICS_ERROR", "获取统计信息失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_026)
+                    .cause(e)
+                    .context("operation", "getStatistics")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -812,13 +841,16 @@ public class KnowledgeBaseAppService {
         long startTime = System.currentTimeMillis();
         Map<String, String> components = new HashMap<>();
 
+        String healthyStatus = SystemConstants.HealthCheck.STATUS_HEALTHY;
+        String unhealthyStatus = SystemConstants.HealthCheck.STATUS_UNHEALTHY;
+
         try {
             // 检查数据库连接
             try {
                 long count = documentRepo.countByTenantId(1L); // 使用一个测试租户ID
-                components.put("database", "healthy");
+                components.put("database", healthyStatus);
             } catch (Exception e) {
-                components.put("database", "unhealthy: " + e.getMessage());
+                components.put("database", unhealthyStatus + ": " + e.getMessage());
             }
 
             // 检查向量服务
@@ -826,44 +858,44 @@ public class KnowledgeBaseAppService {
                 // 简单的向量操作测试
                 float[] testVector = new float[]{0.1f, 0.2f, 0.3f};
                 KbUtils.normalizeVector(testVector);
-                components.put("vector_service", "healthy");
+                components.put("vector_service", healthyStatus);
             } catch (Exception e) {
-                components.put("vector_service", "unhealthy: " + e.getMessage());
+                components.put("vector_service", unhealthyStatus + ": " + e.getMessage());
             }
 
             // 检查嵌入服务
             try {
                 boolean available = embeddingService.isModelAvailable(config.getVector().getDefaultModel());
-                components.put("embedding_service", available ? "healthy" : "unhealthy: model not available");
+                components.put("embedding_service", available ? healthyStatus : unhealthyStatus + ": " + " model not available");
             } catch (Exception e) {
-                components.put("embedding_service", "unhealthy: " + e.getMessage());
+                components.put("embedding_service", unhealthyStatus + ": " + e.getMessage());
             }
 
             // 检查异步执行器
             try {
                 if (!asyncExecutor.isShutdown()) {
-                    components.put("async_executor", "healthy");
+                    components.put("async_executor", healthyStatus);
                 } else {
-                    components.put("async_executor", "unhealthy: executor is shutdown");
+                    components.put("async_executor", unhealthyStatus + ": " + "executor is shutdown");
                 }
             } catch (Exception e) {
-                components.put("async_executor", "unhealthy: " + e.getMessage());
+                components.put("async_executor", unhealthyStatus + ": " + e.getMessage());
             }
 
             boolean allHealthy = components.values().stream()
-                    .allMatch(status -> status.equals("healthy"));
+                    .allMatch(status -> status.equals(healthyStatus));
 
             long responseTime = System.currentTimeMillis() - startTime;
 
             return new HealthStatus(
-                    allHealthy ? "healthy" : "unhealthy",
+                    allHealthy ? healthyStatus : unhealthyStatus,
                     components,
                     responseTime
             );
 
         } catch (Exception e) {
             return new HealthStatus(
-                    "unhealthy",
+                    unhealthyStatus,
                     Map.of("error", e.getMessage()),
                     System.currentTimeMillis() - startTime
             );
@@ -924,7 +956,11 @@ public class KnowledgeBaseAppService {
 
         } catch (Exception e) {
             recordMetrics("document.batch.upload", startTime, false);
-            throw new KbTechnicalException("BATCH_UPLOAD_ERROR", "批量上传失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_007)
+                    .cause(e)
+                    .context("operation", "batchUploadDocuments")
+                    .context("tenantId", cmd.tenantId())
+                    .build();
         }
     }
 
@@ -932,58 +968,39 @@ public class KnowledgeBaseAppService {
 
     private void validateUploadCommand(UploadDocumentCommand cmd) {
         if (!cmd.isContentSizeValid((int) config.getDocument().getMaxSizeBytes())) {
-            throw new KbBusinessException(
-                    "DOCUMENT_TOO_LARGE",
-                    String.format("文档大小超出限制，最大允许 %d MB",
-                            config.getDocument().getMaxSizeBytes() / (1024 * 1024))
+            throw KnowledgeBaseException.fileSizeExceeded(
+                    cmd.content().getBytes().length,
+                    config.getDocument().getMaxSizeBytes() / (1024 * 1024)
             );
         }
 
         int estimatedTokens = KbUtils.estimateTokenCount(cmd.content(), cmd.langCode());
         if (estimatedTokens > KbConstants.SystemLimits.MAX_TOKENS_PER_DOCUMENT) {
-            throw new KbBusinessException(
-                    "DOCUMENT_TOO_COMPLEX",
-                    "文档内容过于复杂，预估Token数量: " + estimatedTokens
-            );
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_012, estimatedTokens);
         }
 
         if (cmd.mimeType() != null && !isSupportedMimeType(cmd.mimeType())) {
-            throw new KbBusinessException(
-                    "UNSUPPORTED_FILE_TYPE",
-                    "不支持的文件类型: " + cmd.mimeType()
-            );
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_004, cmd.mimeType());
         }
     }
 
     private void validateBatchUploadCommand(BatchUploadDocumentsCommand cmd) {
         if (cmd.documents().size() > config.getDocument().getMaxBatchSize()) {
-            throw new KbBusinessException(
-                    "BATCH_SIZE_EXCEEDED",
-                    "批量上传数量超出限制，最大允许: " + config.getDocument().getMaxBatchSize()
-            );
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_008, config.getDocument().getMaxBatchSize());
         }
 
         if (!cmd.isBatchSizeValid(config.getDocument().getMaxSizeBytes() * 10)) {
-            throw new KbBusinessException(
-                    "BATCH_TOO_LARGE",
-                    "批量文档总大小超出限制"
-            );
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_009);
         }
     }
 
     private void validateSearchCommand(VectorSearchCommand cmd) {
         if (!cmd.isThresholdValid()) {
-            throw new KbBusinessException(
-                    "INVALID_SIMILARITY_THRESHOLD",
-                    KbConstants.ErrorMessages.INVALID_SIMILARITY_THRESHOLD
-            );
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_013);
         }
 
         if (cmd.topK() > config.getSearch().getMaxTopK()) {
-            throw new KbBusinessException(
-                    "INVALID_TOP_K",
-                    "返回结果数量超出限制，最大允许: " + config.getSearch().getMaxTopK()
-            );
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_014, config.getSearch().getMaxTopK());
         }
     }
 
@@ -1069,7 +1086,7 @@ public class KnowledgeBaseAppService {
         try {
             return embeddingService.generateEmbedding(query, modelCode);
         } catch (Exception e) {
-            throw new VectorProcessingException("查询向量生成失败", e);
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_033, e);
         }
     }
 

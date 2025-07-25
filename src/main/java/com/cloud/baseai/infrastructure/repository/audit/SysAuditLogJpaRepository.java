@@ -1,8 +1,10 @@
 package com.cloud.baseai.infrastructure.repository.audit;
 
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
 import com.cloud.baseai.domain.audit.model.SysAuditLog;
 import com.cloud.baseai.domain.audit.repository.SysAuditLogRepository;
+import com.cloud.baseai.infrastructure.exception.AuditException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.i18n.MessageManager;
 import com.cloud.baseai.infrastructure.persistence.audit.entity.SysAuditLogEntity;
 import com.cloud.baseai.infrastructure.persistence.audit.mapper.AuditMapper;
 import com.cloud.baseai.infrastructure.repository.audit.spring.SpringSysAuditLogRepo;
@@ -92,7 +94,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      *
      * @param log 要保存的审计日志领域对象
      * @return 保存后的审计日志（包含生成的ID）
-     * @throws AuditServiceException 当保存操作失败时抛出
+     * @throws AuditException 当保存操作失败时抛出
      */
     @Override
     @Transactional // 写操作需要可写事务
@@ -137,19 +139,19 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
             String errorMessage = String.format("保存审计日志失败: action=%s, userId=%s",
                     log.action(), log.userId());
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_SAVE_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_017, e, log.action(), log.userId());
 
         } catch (IllegalArgumentException e) {
             // 参数验证异常通常是业务逻辑问题
             String errorMessage = "审计日志数据验证失败: " + e.getMessage();
             logger.warn(errorMessage, e);
-            throw AuditServiceException.businessError("AUDIT_VALIDATION_FAILED", errorMessage);
+            throw AuditException.businessError(ErrorCode.BIZ_AUDIT_018, e);
 
         } catch (Exception e) {
             // 其他未预期的异常
             String errorMessage = "保存审计日志时发生未知错误";
             logger.error(errorMessage, e);
-            throw AuditServiceException.systemError("AUDIT_SAVE_UNKNOWN_ERROR", errorMessage, e);
+            throw AuditException.systemError(ErrorCode.BIZ_AUDIT_019, e);
         }
     }
 
@@ -161,7 +163,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      *
      * @param id 审计日志ID
      * @return 找到的审计日志，如果不存在则返回空Optional
-     * @throws AuditServiceException 当查询操作失败时抛出
+     * @throws AuditException 当查询操作失败时抛出
      */
     @Override
     public Optional<SysAuditLog> findById(Long id) {
@@ -184,7 +186,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = String.format("查询审计日志失败: id=%d", id);
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_FIND_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_020, e, id);
         }
     }
 
@@ -208,7 +210,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      * @param actions   操作类型列表，null或空表示所有操作类型
      * @param pageable  分页参数
      * @return 查询结果的分页对象
-     * @throws AuditServiceException 当查询操作失败时抛出
+     * @throws AuditException 当查询操作失败时抛出
      */
     @Override
     public Page<SysAuditLog> findUserActions(Long userId, OffsetDateTime startTime, OffsetDateTime endTime,
@@ -241,7 +243,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = String.format("查询用户操作历史失败: userId=%s", userId);
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_QUERY_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_021, e, userId);
         }
     }
 
@@ -254,7 +256,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      * @param tenantId 租户ID
      * @param pageable 分页参数
      * @return 查询结果的分页对象
-     * @throws AuditServiceException 当查询操作失败时抛出
+     * @throws AuditException 当查询操作失败时抛出
      */
     @Override
     public Page<SysAuditLog> findByTenantIdOrderByCreatedAtDesc(Long tenantId, Pageable pageable) {
@@ -280,7 +282,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = String.format("查询租户审计日志失败: tenantId=%d", tenantId);
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_TENANT_QUERY_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_022, e, tenantId);
         }
     }
 
@@ -294,7 +296,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      * @param endTime   结束时间
      * @param pageable  分页参数
      * @return 查询结果的分页对象
-     * @throws AuditServiceException 当查询操作失败时抛出
+     * @throws AuditException 当查询操作失败时抛出
      */
     @Override
     public Page<SysAuditLog> findByTimeRange(OffsetDateTime startTime, OffsetDateTime endTime, Pageable pageable) {
@@ -321,7 +323,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = "按时间范围查询审计日志失败";
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_TIME_RANGE_QUERY_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_023, e);
         }
     }
 
@@ -334,7 +336,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      * @param startTime 开始时间
      * @param endTime   结束时间
      * @return 统计数量
-     * @throws AuditServiceException 当统计操作失败时抛出
+     * @throws AuditException 当统计操作失败时抛出
      */
     @Override
     public long countByTimeRange(OffsetDateTime startTime, OffsetDateTime endTime) {
@@ -357,7 +359,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = "统计审计日志数量失败";
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_COUNT_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_024, e);
         }
     }
 
@@ -370,7 +372,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      * @param startTime 开始时间
      * @param endTime   结束时间
      * @return 统计结果列表，每个元素包含操作类型和数量
-     * @throws AuditServiceException 当统计操作失败时抛出
+     * @throws AuditException 当统计操作失败时抛出
      */
     @Override
     public List<Object[]> countByActionAndTimeRange(OffsetDateTime startTime, OffsetDateTime endTime) {
@@ -393,7 +395,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = "按操作类型统计审计日志失败";
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_ACTION_COUNT_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_025, e);
         }
     }
 
@@ -406,7 +408,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      * @param startTime 开始时间
      * @param endTime   结束时间
      * @return 统计结果列表，每个元素包含用户ID和操作数量
-     * @throws AuditServiceException 当统计操作失败时抛出
+     * @throws AuditException 当统计操作失败时抛出
      */
     @Override
     public List<Object[]> countByUserAndTimeRange(OffsetDateTime startTime, OffsetDateTime endTime) {
@@ -429,7 +431,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = "按用户统计审计日志失败";
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_USER_COUNT_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_026, e);
         }
     }
 
@@ -441,7 +443,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      * 应该确保符合法规要求和公司政策。</p>
      *
      * @param cutoffTime 截止时间，在此时间之前的日志将被删除
-     * @throws AuditServiceException 当删除操作失败时抛出
+     * @throws AuditException 当删除操作失败时抛出
      */
     @Override
     @Transactional // 删除操作需要可写事务
@@ -469,7 +471,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = "删除旧审计日志失败";
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_DELETE_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_027, e);
         }
     }
 
@@ -506,7 +508,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
             String errorMessage = String.format("查询对象操作历史失败: targetType=%s, targetId=%d",
                     targetType, targetId);
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_OBJECT_HISTORY_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_028, e, targetType, targetId);
         }
     }
 
@@ -518,7 +520,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      *
      * @param logs 要保存的审计日志列表
      * @return 保存后的审计日志列表
-     * @throws AuditServiceException 当批量保存操作失败时抛出
+     * @throws AuditException 当批量保存操作失败时抛出
      */
     @Transactional
     public List<SysAuditLog> saveAll(List<SysAuditLog> logs) {
@@ -557,7 +559,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
         } catch (DataAccessException e) {
             String errorMessage = String.format("批量保存审计日志失败: 数量=%d", logs.size());
             logger.error(errorMessage, e);
-            throw AuditServiceException.technicalError("AUDIT_BATCH_SAVE_FAILED", errorMessage, e);
+            throw AuditException.technicalError(ErrorCode.BIZ_AUDIT_029, e, logs.size());
         }
     }
 
@@ -573,15 +575,15 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
      */
     private void validatePageable(Pageable pageable) {
         if (pageable.getPageNumber() < 0) {
-            throw new IllegalArgumentException("页码不能小于0");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_019));
         }
 
         if (pageable.getPageSize() <= 0) {
-            throw new IllegalArgumentException("页大小必须大于0");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_023));
         }
 
         if (pageable.getPageSize() > 1000) {
-            throw new IllegalArgumentException("页大小不能超过1000，当前值: " + pageable.getPageSize());
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_024, pageable.getPageSize()));
         }
     }
 
@@ -597,8 +599,7 @@ public class SysAuditLogJpaRepository implements SysAuditLogRepository {
     private void validateTimeRange(OffsetDateTime startTime, OffsetDateTime endTime) {
         if (startTime != null && endTime != null) {
             if (startTime.isAfter(endTime)) {
-                throw new IllegalArgumentException(
-                        String.format("开始时间不能晚于结束时间: startTime=%s, endTime=%s", startTime, endTime));
+                throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.PARAM_025, startTime, endTime));
             }
 
             // 检查时间范围是否过大（比如超过1年）

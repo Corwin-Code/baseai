@@ -87,6 +87,22 @@ spring:
       name: ${SECURITY_USER:admin}            # 环境变量 SECURITY_USER，默认 admin
       password: ${SECURITY_PASSWORD:admin}    # 环境变量 SECURITY_PASSWORD，默认 admin
 
+  # ========== Spring Messages i18n 配置 ==========
+  messages:
+    basename: messages.errors,messages.validation
+    encoding: UTF-8
+    cache-duration: PT1H
+    fallback-to-system-locale: false
+    always-use-message-format: true
+
+# ========== 自定义错误处理 ==========
+error:
+  handling:
+    include-stack-trace: false
+    include-exception: false
+    include-trace-id: true
+    security-event-logging: true
+
 # ========== Server ==========
 server:
   port: ${SERVER_PORT:9999}       # 服务端口，默认 9999
@@ -349,7 +365,3 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
-  info:
-    title: BaseAI Cloud API
-    version: v1
-    description: 为企业打造 AI 能力的底座云（AI Foundation-as-a-Service）

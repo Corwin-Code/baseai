@@ -6,7 +6,7 @@ import com.cloud.baseai.domain.kb.repository.DocumentRepository;
 import com.cloud.baseai.infrastructure.persistence.kb.entity.KbDocumentEntity;
 import com.cloud.baseai.infrastructure.persistence.kb.mapper.KbMapper;
 import com.cloud.baseai.infrastructure.repository.kb.spring.SpringKbDocumentRepo;
-import com.cloud.baseai.infrastructure.utils.KbConstants;
+import com.cloud.baseai.infrastructure.constants.KbConstants;
 import com.cloud.baseai.infrastructure.utils.KbUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;

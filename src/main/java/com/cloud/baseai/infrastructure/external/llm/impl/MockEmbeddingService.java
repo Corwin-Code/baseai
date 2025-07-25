@@ -1,6 +1,8 @@
 package com.cloud.baseai.infrastructure.external.llm.impl;
 
-import com.cloud.baseai.infrastructure.exception.VectorProcessingException;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.KnowledgeBaseException;
 import com.cloud.baseai.infrastructure.external.llm.EmbeddingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,9 +46,14 @@ public class MockEmbeddingService implements EmbeddingService {
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new VectorProcessingException("向量生成被中断", e);
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_035, e);
         } catch (Exception e) {
-            throw new VectorProcessingException("向量生成失败: " + e.getMessage(), e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_033)
+                    .cause(e)
+                    .context("operation", "generateEmbedding")
+                    .context("text", text)
+                    .context("model", modelCode)
+                    .build();
         }
     }
 

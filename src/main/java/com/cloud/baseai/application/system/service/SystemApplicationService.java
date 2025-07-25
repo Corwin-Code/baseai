@@ -5,15 +5,16 @@ import com.cloud.baseai.application.system.command.CreateSystemTaskCommand;
 import com.cloud.baseai.application.system.command.RetryTaskCommand;
 import com.cloud.baseai.application.system.command.UpdateSystemSettingCommand;
 import com.cloud.baseai.application.system.dto.*;
-import com.cloud.baseai.application.user.service.UserInfoService;
 import com.cloud.baseai.domain.system.model.SystemSetting;
 import com.cloud.baseai.domain.system.model.SystemTask;
 import com.cloud.baseai.domain.system.model.enums.SettingValueType;
 import com.cloud.baseai.domain.system.model.enums.TaskStatus;
 import com.cloud.baseai.domain.system.repository.SystemSettingRepository;
 import com.cloud.baseai.domain.system.repository.SystemTaskRepository;
-import com.cloud.baseai.infrastructure.exception.SystemBusinessException;
-import com.cloud.baseai.infrastructure.exception.SystemTechnicalException;
+import com.cloud.baseai.domain.user.service.UserInfoService;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.SystemException;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,7 +91,7 @@ public class SystemApplicationService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            throw new SystemTechnicalException("GET_SETTINGS_ERROR", "获取系统设置失败", e);
+            throw SystemException.settingNotFound();
         }
     }
 
@@ -105,7 +106,11 @@ public class SystemApplicationService {
                     .map(this::toSystemSettingDTO);
 
         } catch (Exception e) {
-            throw new SystemTechnicalException("GET_SETTING_ERROR", "获取系统设置失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_SETTING_001)
+                    .cause(e)
+                    .context("operation", "getSettingByKey")
+                    .context("key", key)
+                    .build();
         }
     }
 
@@ -148,10 +153,14 @@ public class SystemApplicationService {
 
         } catch (Exception e) {
             log.error("更新系统设置失败: key={}", cmd.key(), e);
-            if (e instanceof SystemBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new SystemTechnicalException("UPDATE_SETTING_ERROR", "更新系统设置失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_SETTING_002)
+                    .cause(e)
+                    .context("operation", "updateSetting")
+                    .context("key", cmd.key())
+                    .build();
         }
     }
 
@@ -165,7 +174,7 @@ public class SystemApplicationService {
         try {
             // 验证批量大小
             if (!cmd.isValidBatchSize()) {
-                throw new SystemBusinessException("BATCH_SIZE_EXCEEDED", "批量更新设置数量超出限制");
+                throw new SystemException(ErrorCode.SYS_SETTING_003);
             }
 
             validateSystemAdminPermission(cmd.operatorId());
@@ -187,10 +196,15 @@ public class SystemApplicationService {
             return results;
 
         } catch (Exception e) {
-            if (e instanceof SystemBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new SystemTechnicalException("BATCH_UPDATE_SETTINGS_ERROR", "批量更新设置失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_SETTING_004)
+                    .cause(e)
+                    .context("operation", "batchUpdateSettings")
+                    .context("batchSize", cmd.settings().size())
+                    .context("operatorId", cmd.operatorId())
+                    .build();
         }
     }
 
@@ -209,7 +223,7 @@ public class SystemApplicationService {
         try {
             // 验证任务参数
             if (!cmd.hasValidPayloadSize()) {
-                throw new SystemBusinessException("INVALID_PAYLOAD_SIZE", "任务参数过大");
+                throw new SystemException(ErrorCode.SYS_TASK_004);
             }
 
             // 创建任务
@@ -222,10 +236,15 @@ public class SystemApplicationService {
 
         } catch (Exception e) {
             log.error("创建系统任务失败: taskType={}", cmd.taskType(), e);
-            if (e instanceof SystemBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new SystemTechnicalException("CREATE_TASK_ERROR", "创建系统任务失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_TASK_005)
+                    .cause(e)
+                    .context("operation", "createTask")
+                    .context("tenantId", cmd.tenantId())
+                    .context("taskType", cmd.taskType())
+                    .build();
         }
     }
 
@@ -259,7 +278,11 @@ public class SystemApplicationService {
             return PageResultDTO.of(taskDTOs, total, page, size);
 
         } catch (Exception e) {
-            throw new SystemTechnicalException("LIST_TASKS_ERROR", "查询任务列表失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_TASK_006)
+                    .cause(e)
+                    .context("operation", "listTasks")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -271,15 +294,19 @@ public class SystemApplicationService {
 
         try {
             SystemTask task = taskRepo.findById(taskId)
-                    .orElseThrow(() -> new SystemBusinessException("TASK_NOT_FOUND", "任务不存在"));
+                    .orElseThrow(() -> new SystemException(ErrorCode.SYS_TASK_001));
 
             return toSystemTaskDetailDTO(task);
 
         } catch (Exception e) {
-            if (e instanceof SystemBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new SystemTechnicalException("GET_TASK_DETAIL_ERROR", "获取任务详情失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_TASK_007)
+                    .cause(e)
+                    .context("operation", "getTaskDetail")
+                    .context("taskId", taskId)
+                    .build();
         }
     }
 
@@ -292,10 +319,10 @@ public class SystemApplicationService {
 
         try {
             SystemTask task = taskRepo.findById(cmd.taskId())
-                    .orElseThrow(() -> new SystemBusinessException("TASK_NOT_FOUND", "任务不存在"));
+                    .orElseThrow(() -> new SystemException(ErrorCode.SYS_TASK_001));
 
             if (!task.canRetry()) {
-                throw new SystemBusinessException("TASK_CANNOT_RETRY", "任务无法重试");
+                throw new SystemException(ErrorCode.SYS_TASK_002);
             }
 
             SystemTask retriedTask = task.retry();
@@ -306,10 +333,14 @@ public class SystemApplicationService {
             return toSystemTaskDTO(savedTask);
 
         } catch (Exception e) {
-            if (e instanceof SystemBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new SystemTechnicalException("RETRY_TASK_ERROR", "重试任务失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_TASK_003)
+                    .cause(e)
+                    .context("operation", "retryTask")
+                    .context("taskId", cmd.taskId())
+                    .build();
         }
     }
 
@@ -366,7 +397,10 @@ public class SystemApplicationService {
             );
 
         } catch (Exception e) {
-            throw new SystemTechnicalException("GET_STATISTICS_ERROR", "获取系统统计失败", e);
+            throw BusinessException.builder(ErrorCode.SYS_DATA_006)
+                    .cause(e)
+                    .context("operation", "getSystemStatistics")
+                    .build();
         }
     }
 
@@ -446,7 +480,7 @@ public class SystemApplicationService {
     private void validateSystemAdminPermission(Long operatorId) {
         // 简化实现，实际应该检查用户的系统管理员权限
         if (operatorId == null) {
-            throw new SystemBusinessException("UNAUTHORIZED", "需要系统管理员权限");
+            throw new SystemException(ErrorCode.SYS_PERM_005);
         }
         log.debug("验证系统管理员权限: operatorId={}", operatorId);
     }

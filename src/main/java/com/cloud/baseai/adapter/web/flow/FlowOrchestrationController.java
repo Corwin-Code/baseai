@@ -3,7 +3,7 @@ package com.cloud.baseai.adapter.web.flow;
 import com.cloud.baseai.application.flow.command.*;
 import com.cloud.baseai.application.flow.dto.*;
 import com.cloud.baseai.application.flow.service.FlowOrchestrationAppService;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;

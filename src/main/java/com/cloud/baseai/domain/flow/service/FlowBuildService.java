@@ -5,7 +5,9 @@ import com.cloud.baseai.domain.flow.model.FlowDefinition;
 import com.cloud.baseai.domain.flow.model.FlowEdge;
 import com.cloud.baseai.domain.flow.model.FlowNode;
 import com.cloud.baseai.domain.flow.model.NodeTypes;
-import com.cloud.baseai.infrastructure.exception.FlowValidationException;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.FlowOrchestrationException;
 import com.cloud.baseai.infrastructure.flow.service.NodeTypeService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -56,7 +58,7 @@ public class FlowBuildService {
      *
      * @param nodes 流程节点列表
      * @param edges 流程连接列表
-     * @throws FlowValidationException 当发现结构问题时抛出
+     * @throws FlowOrchestrationException 当发现结构问题时抛出
      */
     public void validateFlowStructure(List<UpdateFlowStructureCommand.NodeCommand> nodes,
                                       List<UpdateFlowStructureCommand.EdgeCommand> edges) {
@@ -77,12 +79,17 @@ public class FlowBuildService {
 
             log.info("流程结构验证通过: nodes={}, edges={}", nodes.size(), edges.size());
 
-        } catch (FlowValidationException e) {
-            log.warn("流程结构验证失败: {}", e.getMessage());
-            throw e;
         } catch (Exception e) {
-            log.error("流程结构验证异常", e);
-            throw new FlowValidationException("流程结构验证过程中发生异常: " + e.getMessage());
+            log.error("流程结构验证失败: {}", e.getMessage());
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_070)
+                    .cause(e)
+                    .context("operation", "validateFlowStructure")
+                    .context("nodes", nodes.size())
+                    .context("edges", edges.size())
+                    .build();
         }
     }
 
@@ -99,14 +106,14 @@ public class FlowBuildService {
             boolean hasStartNode = nodes.stream()
                     .anyMatch(node -> NodeTypes.START.equals(node.nodeTypeCode()));
             if (!hasStartNode) {
-                throw new FlowValidationException("流程必须包含一个开始节点");
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_028);
             }
 
             // 检查流程必须有结束节点
             boolean hasEndNode = nodes.stream()
                     .anyMatch(node -> NodeTypes.END.equals(node.nodeTypeCode()));
             if (!hasEndNode) {
-                throw new FlowValidationException("流程必须包含至少一个结束节点");
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_029);
             }
 
             // 检查所有节点都必须可达
@@ -117,9 +124,16 @@ public class FlowBuildService {
 
             log.info("流程发布验证通过: definitionId={}", definition.id());
 
-        } catch (FlowValidationException e) {
+        } catch (Exception e) {
             log.warn("流程发布验证失败: definitionId={}, error={}", definition.id(), e.getMessage());
-            throw e;
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_024)
+                    .cause(e)
+                    .context("operation", "validateForPublication")
+                    .context("definitionId", definition.id())
+                    .build();
         }
     }
 
@@ -178,10 +192,17 @@ public class FlowBuildService {
 
         } catch (JsonProcessingException e) {
             log.error("快照JSON序列化失败: definitionId={}", definition.id(), e);
-            throw new FlowValidationException("快照创建失败: JSON序列化错误");
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_061);
         } catch (Exception e) {
             log.error("快照创建失败: definitionId={}", definition.id(), e);
-            throw new FlowValidationException("快照创建失败: " + e.getMessage());
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_FLOW_059)
+                    .cause(e)
+                    .context("operation", "createSnapshotJson")
+                    .context("definitionId", definition.id())
+                    .build();
         }
     }
 
@@ -217,23 +238,23 @@ public class FlowBuildService {
         }
 
         if (!duplicateKeys.isEmpty()) {
-            throw new FlowValidationException("发现重复的节点Key: " + String.join(", ", duplicateKeys));
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_035, String.join(", ", duplicateKeys));
         }
 
         // 检查边引用的节点是否存在
         for (UpdateFlowStructureCommand.EdgeCommand edge : edges) {
             if (!nodeKeys.contains(edge.sourceKey())) {
-                throw new FlowValidationException("边引用了不存在的源节点: " + edge.sourceKey());
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_042, edge.sourceKey());
             }
             if (!nodeKeys.contains(edge.targetKey())) {
-                throw new FlowValidationException("边引用了不存在的目标节点: " + edge.targetKey());
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_043, edge.targetKey());
             }
         }
 
         // 检查节点类型是否有效
         for (UpdateFlowStructureCommand.NodeCommand node : nodes) {
             if (!nodeTypeService.isValidNodeType(node.nodeTypeCode())) {
-                throw new FlowValidationException("无效的节点类型: " + node.nodeTypeCode());
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_036, node.nodeTypeCode());
             }
         }
     }
@@ -281,7 +302,7 @@ public class FlowBuildService {
         for (String node : nodeKeys) {
             if (!visited.contains(node)) {
                 if (hasCycleDFS(node, graph, visited, inStack)) {
-                    throw new FlowValidationException("流程中存在循环依赖");
+                    throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_032);
                 }
             }
         }
@@ -329,7 +350,7 @@ public class FlowBuildService {
                 .collect(Collectors.toList());
 
         if (!isolatedNodes.isEmpty()) {
-            throw new FlowValidationException("发现孤立节点: " + String.join(", ", isolatedNodes));
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_031, String.join(", ", isolatedNodes));
         }
     }
 
@@ -360,12 +381,12 @@ public class FlowBuildService {
 
         // 检查开始节点数量
         if (startNodeCount > 1) {
-            throw new FlowValidationException("流程只能有一个开始节点");
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_030);
         }
 
         // 检查结束节点数量
         if (endNodeCount == 0) {
-            throw new FlowValidationException("流程必须至少有一个结束节点");
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_029);
         }
 
         // 检查开始节点不能有输入边
@@ -380,7 +401,7 @@ public class FlowBuildService {
                     .anyMatch(edge -> edge.targetKey().equals(startNodeKey));
 
             if (hasInputEdge) {
-                throw new FlowValidationException("开始节点不能有输入连接");
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_071);
             }
         }
 
@@ -394,7 +415,7 @@ public class FlowBuildService {
                 .anyMatch(edge -> endNodeKeys.contains(edge.sourceKey()));
 
         if (hasOutputEdge) {
-            throw new FlowValidationException("结束节点不能有输出连接");
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_072);
         }
     }
 
@@ -406,8 +427,7 @@ public class FlowBuildService {
             try {
                 nodeTypeService.validateNodeConfig(node.nodeTypeCode(), node.configJson());
             } catch (Exception e) {
-                throw new FlowValidationException(
-                        String.format("节点 %s 配置无效: %s", node.nodeKey(), e.getMessage()));
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_073, node.nodeKey(), e.getMessage());
             }
         }
     }
@@ -418,8 +438,7 @@ public class FlowBuildService {
     private void validateEdgeConfigurations(List<UpdateFlowStructureCommand.EdgeCommand> edges) {
         for (UpdateFlowStructureCommand.EdgeCommand edge : edges) {
             if (!edge.isValidEdge()) {
-                throw new FlowValidationException(
-                        String.format("无效的连接: %s -> %s", edge.sourceKey(), edge.targetKey()));
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_074, edge.sourceKey(), edge.targetKey());
             }
         }
     }
@@ -474,7 +493,7 @@ public class FlowBuildService {
         unreachable.removeAll(reachable);
 
         if (!unreachable.isEmpty()) {
-            throw new FlowValidationException("存在不可达的节点: " + String.join(", ", unreachable));
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_075, String.join(", ", unreachable));
         }
     }
 
@@ -485,8 +504,7 @@ public class FlowBuildService {
         for (FlowNode node : nodes) {
             if (node.isControlNode() || node.nodeTypeCode().equals(NodeTypes.LLM)) {
                 if (node.configJson() == null || node.configJson().trim().isEmpty()) {
-                    throw new FlowValidationException(
-                            String.format("关键节点 %s 缺少必要配置", node.nodeKey()));
+                    throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_076, node.nodeKey());
                 }
             }
         }

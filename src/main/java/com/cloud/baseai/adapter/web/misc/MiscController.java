@@ -5,7 +5,7 @@ import com.cloud.baseai.application.misc.command.UpdatePromptTemplateCommand;
 import com.cloud.baseai.application.misc.command.UploadFileCommand;
 import com.cloud.baseai.application.misc.dto.*;
 import com.cloud.baseai.application.misc.service.MiscApplicationService;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;

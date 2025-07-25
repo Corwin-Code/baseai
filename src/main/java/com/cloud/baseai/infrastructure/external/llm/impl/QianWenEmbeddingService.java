@@ -1,7 +1,9 @@
 package com.cloud.baseai.infrastructure.external.llm.impl;
 
 import com.cloud.baseai.infrastructure.config.EmbeddingProperties;
-import com.cloud.baseai.infrastructure.exception.VectorProcessingException;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.KnowledgeBaseException;
 import com.cloud.baseai.infrastructure.external.llm.EmbeddingService;
 import com.cloud.baseai.infrastructure.utils.EmbeddingUtils;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -216,7 +218,7 @@ public class QianWenEmbeddingService implements EmbeddingService {
         }
 
         if (!isModelAvailable(modelCode)) {
-            throw new VectorProcessingException("不支持的千问模型: " + modelCode);
+            throw new KnowledgeBaseException(ErrorCode.EXT_AI_011, modelCode);
         }
 
         return modelCode;
@@ -227,9 +229,7 @@ public class QianWenEmbeddingService implements EmbeddingService {
         ModelInfo modelInfo = SUPPORTED_MODELS.get(model);
 
         if (modelInfo != null && estimatedTokens > modelInfo.maxTokens) {
-            throw new VectorProcessingException(
-                    String.format("文本过长，估算Token数: %d，模型限制: %d",
-                            estimatedTokens, modelInfo.maxTokens));
+            throw new KnowledgeBaseException(ErrorCode.EXT_AI_006, estimatedTokens, modelInfo.maxTokens);
         }
     }
 
@@ -247,7 +247,7 @@ public class QianWenEmbeddingService implements EmbeddingService {
             if (config.getRateLimit().isLogWarnings()) {
                 log.warn("千问API限流等待超时，请求被拒绝");
             }
-            throw new VectorProcessingException("API请求频率过高，请稍后重试");
+            throw new KnowledgeBaseException(ErrorCode.EXT_AI_007);
         }
     }
 
@@ -286,7 +286,7 @@ public class QianWenEmbeddingService implements EmbeddingService {
                     response.getBody().output == null ||
                     response.getBody().output.embeddings == null ||
                     response.getBody().output.embeddings.isEmpty()) {
-                throw new VectorProcessingException("千问返回空响应");
+                throw new KnowledgeBaseException(ErrorCode.EXT_AI_012);
             }
 
             List<Double> embedding = response.getBody().output.embeddings.get(0).embedding;
@@ -303,10 +303,15 @@ public class QianWenEmbeddingService implements EmbeddingService {
             return result;
 
         } catch (Exception e) {
-            if (e instanceof VectorProcessingException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new VectorProcessingException("千问API调用失败: " + e.getMessage(), e);
+            throw BusinessException.builder(ErrorCode.EXT_AI_013)
+                    .cause(e)
+                    .context("operation", "callQianWenAPI")
+                    .context("text", text)
+                    .context("model", model)
+                    .build();
         }
     }
 
@@ -327,7 +332,7 @@ public class QianWenEmbeddingService implements EmbeddingService {
             if (response.getBody() == null ||
                     response.getBody().output == null ||
                     response.getBody().output.embeddings == null) {
-                throw new VectorProcessingException("千问返回空响应");
+                throw new KnowledgeBaseException(ErrorCode.EXT_AI_012);
             }
 
             return response.getBody().output.embeddings.stream()
@@ -344,10 +349,15 @@ public class QianWenEmbeddingService implements EmbeddingService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            if (e instanceof VectorProcessingException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new VectorProcessingException("千问批量API调用失败: " + e.getMessage(), e);
+            throw BusinessException.builder(ErrorCode.EXT_AI_014)
+                    .cause(e)
+                    .context("operation", "callQianWenBatchAPI")
+                    .context("texts", texts)
+                    .context("model", model)
+                    .build();
         }
     }
 

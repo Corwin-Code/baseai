@@ -1,10 +1,11 @@
 package com.cloud.baseai.domain.chat.service;
 
 import com.cloud.baseai.domain.chat.model.ChatMessage;
+import com.cloud.baseai.domain.chat.model.ContentSafety;
+import com.cloud.baseai.domain.chat.model.ConversationQuality;
 import com.cloud.baseai.domain.chat.model.MessageRole;
 import com.cloud.baseai.infrastructure.config.ChatProperties;
 import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
-import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -643,134 +644,5 @@ public class ChatProcessingService {
             case 3, 4 -> "HIGH";
             default -> "CRITICAL";
         };
-    }
-
-    // =================== 内部数据结构 ===================
-
-    /**
-     * 对话质量评估结果
-     */
-    @Getter
-    public static class ConversationQuality {
-        private final float relevance;
-        private final float completeness;
-        private final float accuracy;
-        private final float responseTime;
-        private final float overallScore;
-
-        private ConversationQuality(Builder builder) {
-            this.relevance = builder.relevance;
-            this.completeness = builder.completeness;
-            this.accuracy = builder.accuracy;
-            this.responseTime = builder.responseTime;
-            this.overallScore = builder.overallScore;
-        }
-
-        public static Builder builder() {
-            return new Builder();
-        }
-
-        public static class Builder {
-            private float relevance;
-            private float completeness;
-            private float accuracy;
-            private float responseTime;
-            private float overallScore;
-
-            public Builder relevance(float relevance) {
-                this.relevance = relevance;
-                return this;
-            }
-
-            public Builder completeness(float completeness) {
-                this.completeness = completeness;
-                return this;
-            }
-
-            public Builder accuracy(float accuracy) {
-                this.accuracy = accuracy;
-                return this;
-            }
-
-            public Builder responseTime(float responseTime) {
-                this.responseTime = responseTime;
-                return this;
-            }
-
-            public Builder overallScore(float overallScore) {
-                this.overallScore = overallScore;
-                return this;
-            }
-
-            public ConversationQuality build() {
-                return new ConversationQuality(this);
-            }
-        }
-    }
-
-    /**
-     * 内容安全评估结果
-     */
-    public static class ContentSafety {
-        private final boolean hasPersonalInfo;
-        private final boolean hasInappropriateContent;
-        private final boolean hasCommercialSecrets;
-        @Getter
-        private final String riskLevel;
-
-        private ContentSafety(Builder builder) {
-            this.hasPersonalInfo = builder.hasPersonalInfo;
-            this.hasInappropriateContent = builder.hasInappropriateContent;
-            this.hasCommercialSecrets = builder.hasCommercialSecrets;
-            this.riskLevel = builder.riskLevel;
-        }
-
-        public static Builder builder() {
-            return new Builder();
-        }
-
-        // Getters
-        public boolean hasPersonalInfo() {
-            return hasPersonalInfo;
-        }
-
-        public boolean hasInappropriateContent() {
-            return hasInappropriateContent;
-        }
-
-        public boolean hasCommercialSecrets() {
-            return hasCommercialSecrets;
-        }
-
-        public static class Builder {
-            private boolean hasPersonalInfo;
-            private boolean hasInappropriateContent;
-            private boolean hasCommercialSecrets;
-            private String riskLevel;
-
-            public Builder hasPersonalInfo(boolean hasPersonalInfo) {
-                this.hasPersonalInfo = hasPersonalInfo;
-                return this;
-            }
-
-            public Builder hasInappropriateContent(boolean hasInappropriateContent) {
-                this.hasInappropriateContent = hasInappropriateContent;
-                return this;
-            }
-
-            public Builder hasCommercialSecrets(boolean hasCommercialSecrets) {
-                this.hasCommercialSecrets = hasCommercialSecrets;
-                return this;
-            }
-
-            public Builder riskLevel(String riskLevel) {
-                this.riskLevel = riskLevel;
-                return this;
-            }
-
-            public ContentSafety build() {
-                return new ContentSafety(this);
-            }
-        }
     }
 }

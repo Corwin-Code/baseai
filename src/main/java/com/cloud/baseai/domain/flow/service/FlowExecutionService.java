@@ -5,7 +5,8 @@ import com.cloud.baseai.domain.flow.model.FlowSnapshot;
 import com.cloud.baseai.domain.flow.repository.FlowRunLogRepository;
 import com.cloud.baseai.domain.flow.repository.FlowRunRepository;
 import com.cloud.baseai.domain.flow.repository.FlowSnapshotRepository;
-import com.cloud.baseai.infrastructure.exception.FlowException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.FlowOrchestrationException;
 import com.cloud.baseai.infrastructure.flow.executor.NodeExecutor;
 import com.cloud.baseai.infrastructure.flow.model.FlowExecutionContext;
 import com.cloud.baseai.infrastructure.flow.model.NodeExecutionInfo;
@@ -78,7 +79,7 @@ public class FlowExecutionService {
      * @param inputData      输入数据
      * @param timeoutMinutes 超时时间（分钟）
      * @return 执行结果JSON
-     * @throws FlowException 当快照不存在或执行失败时抛出
+     * @throws FlowOrchestrationException 当快照不存在或执行失败时抛出
      */
     public String executeFlowBySnapshotId(Long runId, Long snapshotId,
                                           Map<String, Object> inputData, Integer timeoutMinutes) {
@@ -86,12 +87,10 @@ public class FlowExecutionService {
 
         // 加载快照
         FlowSnapshot snapshot = snapshotRepo.findById(snapshotId)
-                .orElseThrow(() -> new FlowException("SNAPSHOT_NOT_FOUND",
-                        "流程快照不存在: " + snapshotId));
+                .orElseThrow(() -> new FlowOrchestrationException(ErrorCode.BIZ_FLOW_058, snapshotId));
 
         if (!snapshot.isAvailable()) {
-            throw new FlowException("SNAPSHOT_UNAVAILABLE",
-                    "流程快照不可用: " + snapshotId);
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_066, snapshotId);
         }
 
         return executeFlow(runId, snapshot, inputData, timeoutMinutes);
@@ -138,12 +137,12 @@ public class FlowExecutionService {
         } catch (TimeoutException e) {
             log.error("流程执行超时: runId={}", runId);
             stopExecution(runId);
-            throw new FlowException("EXECUTION_TIMEOUT", "流程执行超时");
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_049);
 
         } catch (Exception e) {
             log.error("流程执行失败: runId={}", runId, e);
             runningTasks.remove(runId);
-            throw new FlowException("EXECUTION_ERROR", "流程执行失败: " + e.getMessage(), e);
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_005, e);
         }
     }
 
@@ -228,7 +227,7 @@ public class FlowExecutionService {
             // 按执行计划逐步执行节点
             for (String nodeKey : executionPlan) {
                 if (Thread.currentThread().isInterrupted()) {
-                    throw new InterruptedException("执行被中断");
+                    throw new InterruptedException(ErrorCode.BIZ_FLOW_067.getDefaultMessage());
                 }
 
                 executeNode(context, nodeKey);
@@ -258,7 +257,7 @@ public class FlowExecutionService {
             // 获取节点信息
             NodeExecutionInfo nodeInfo = context.getSnapshot().getNode(nodeKey);
             if (nodeInfo == null) {
-                throw new FlowException("NODE_NOT_FOUND", "节点不存在: " + nodeKey);
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_034, nodeKey);
             }
 
             // 检查依赖是否满足
@@ -270,8 +269,7 @@ public class FlowExecutionService {
             // 获取节点执行器
             NodeExecutor executor = executorManager.getExecutor(nodeInfo.nodeTypeCode());
             if (executor == null) {
-                throw new FlowException("EXECUTOR_NOT_FOUND",
-                        "未找到节点执行器: " + nodeInfo.nodeTypeCode());
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_068, nodeInfo.nodeTypeCode());
             }
 
             // 检查执行器健康状态
@@ -314,8 +312,7 @@ public class FlowExecutionService {
             if (shouldRetry(context, nodeKey, e)) {
                 retryNodeExecution(context, nodeKey);
             } else {
-                throw new FlowException("NODE_EXECUTION_ERROR",
-                        "节点执行失败: " + nodeKey, e);
+                throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_040, nodeKey, e);
             }
         }
     }
@@ -452,7 +449,7 @@ public class FlowExecutionService {
             Thread.sleep(1000L * (currentRetries)); // 递增延迟
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("重试等待被中断", e);
+            throw new FlowOrchestrationException(ErrorCode.SYS_TASK_008, e);
         }
 
         // 递归调用执行
@@ -469,7 +466,7 @@ public class FlowExecutionService {
      */
     private FlowSnapshot parseSnapshotFromJson(String snapshotJson) {
         if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
-            throw new FlowException("EMPTY_SNAPSHOT", "快照内容为空");
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_058, snapshotJson);
         }
 
         try {
@@ -484,7 +481,7 @@ public class FlowExecutionService {
 
         } catch (Exception e) {
             log.error("JSON快照解析失败", e);
-            throw new FlowException("SNAPSHOT_PARSE_ERROR", "快照解析失败: " + e.getMessage(), e);
+            throw new FlowOrchestrationException(ErrorCode.BIZ_FLOW_069, e);
         }
     }
 

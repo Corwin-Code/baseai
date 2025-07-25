@@ -3,7 +3,7 @@ package com.cloud.baseai.adapter.web.chat;
 import com.cloud.baseai.application.chat.command.*;
 import com.cloud.baseai.application.chat.dto.*;
 import com.cloud.baseai.application.chat.service.ChatApplicationService;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;

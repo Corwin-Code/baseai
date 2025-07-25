@@ -1,8 +1,10 @@
 package com.cloud.baseai.infrastructure.external.email;
 
-import com.cloud.baseai.infrastructure.exception.EmailServiceException;
+import com.cloud.baseai.infrastructure.exception.EmailException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.external.email.model.BatchEmailResult;
 import com.cloud.baseai.infrastructure.external.email.model.EmailStatus;
+import com.cloud.baseai.infrastructure.i18n.MessageManager;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -108,12 +110,12 @@ public class EmailServiceImpl implements EmailService {
      */
     @Override
     public void sendActivationEmail(String email, String username, String activationCode)
-            throws EmailServiceException {
+            throws EmailException {
 
         // 第一步：参数验证，确保传入的数据是有效的
-        validateEmailParameters(email, "用户邮箱不能为空");
-        validateStringParameter(username, "用户名不能为空");
-        validateStringParameter(activationCode, "激活码不能为空");
+        validateEmailParameters(email, MessageManager.getMessage(ErrorCode.EXT_EMAIL_001));
+        validateStringParameter(username, MessageManager.getMessage(ErrorCode.EXT_EMAIL_002));
+        validateStringParameter(activationCode, MessageManager.getMessage(ErrorCode.EXT_EMAIL_005));
 
         log.info("准备发送激活邮件: email={}, username={}", email, username);
 
@@ -143,9 +145,8 @@ public class EmailServiceImpl implements EmailService {
             log.info("激活邮件发送成功: email={}", email);
 
         } catch (Exception e) {
-            String errorMessage = "发送激活邮件失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new EmailServiceException("ACTIVATION_EMAIL_FAILED", errorMessage, e);
+            log.error("发送激活邮件失败: {}", e.getMessage(), e);
+            throw EmailException.activationFailed(e.getMessage());
         }
     }
 
@@ -157,11 +158,11 @@ public class EmailServiceImpl implements EmailService {
      */
     @Override
     public void sendInvitationEmail(String email, String orgName, String invitationToken)
-            throws EmailServiceException {
+            throws EmailException {
 
-        validateEmailParameters(email, "受邀用户邮箱不能为空");
-        validateStringParameter(orgName, "组织名称不能为空");
-        validateStringParameter(invitationToken, "邀请令牌不能为空");
+        validateEmailParameters(email, MessageManager.getMessage(ErrorCode.EXT_EMAIL_003));
+        validateStringParameter(orgName, MessageManager.getMessage(ErrorCode.EXT_EMAIL_004));
+        validateStringParameter(invitationToken, MessageManager.getMessage(ErrorCode.EXT_EMAIL_006));
 
         log.info("准备发送邀请邮件: email={}, orgName={}", email, orgName);
 
@@ -184,9 +185,8 @@ public class EmailServiceImpl implements EmailService {
             log.info("邀请邮件发送成功: email={}, orgName={}", email, orgName);
 
         } catch (Exception e) {
-            String errorMessage = "发送邀请邮件失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new EmailServiceException("INVITATION_EMAIL_FAILED", errorMessage, e);
+            log.error("发送邀请邮件失败: {}", e.getMessage(), e);
+            throw EmailException.invitationFailed(e.getMessage());
         }
     }
 
@@ -198,11 +198,11 @@ public class EmailServiceImpl implements EmailService {
      */
     @Override
     public void sendPasswordResetEmail(String email, String username, String resetToken)
-            throws EmailServiceException {
+            throws EmailException {
 
-        validateEmailParameters(email, "用户邮箱不能为空");
-        validateStringParameter(username, "用户名不能为空");
-        validateStringParameter(resetToken, "重置令牌不能为空");
+        validateEmailParameters(email, MessageManager.getMessage(ErrorCode.EXT_EMAIL_001));
+        validateStringParameter(username, MessageManager.getMessage(ErrorCode.EXT_EMAIL_002));
+        validateStringParameter(resetToken, MessageManager.getMessage(ErrorCode.EXT_EMAIL_007));
 
         log.info("准备发送密码重置邮件: email={}, username={}", email, username);
 
@@ -225,9 +225,8 @@ public class EmailServiceImpl implements EmailService {
             log.info("密码重置邮件发送成功: email={}", email);
 
         } catch (Exception e) {
-            String errorMessage = "发送密码重置邮件失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new EmailServiceException("PASSWORD_RESET_EMAIL_FAILED", errorMessage, e);
+            log.error("发送密码重置邮件失败: {}", e.getMessage(), e);
+            throw EmailException.passwordResetFailed(e.getMessage());
         }
     }
 
@@ -239,11 +238,11 @@ public class EmailServiceImpl implements EmailService {
      */
     @Override
     public void sendNotificationEmail(String email, String subject, String content)
-            throws EmailServiceException {
+            throws EmailException {
 
-        validateEmailParameters(email, "用户邮箱不能为空");
-        validateStringParameter(subject, "邮件主题不能为空");
-        validateStringParameter(content, "邮件内容不能为空");
+        validateEmailParameters(email, MessageManager.getMessage(ErrorCode.EXT_EMAIL_001));
+        validateStringParameter(subject, MessageManager.getMessage(ErrorCode.EXT_EMAIL_010));
+        validateStringParameter(content, MessageManager.getMessage(ErrorCode.EXT_EMAIL_011));
 
         log.info("准备发送通知邮件: email={}, subject={}", email, subject);
 
@@ -252,9 +251,8 @@ public class EmailServiceImpl implements EmailService {
             log.info("通知邮件发送成功: email={}", email);
 
         } catch (Exception e) {
-            String errorMessage = "发送通知邮件失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new EmailServiceException("NOTIFICATION_EMAIL_FAILED", errorMessage, e);
+            log.error("发送通知邮件失败: {}", e.getMessage(), e);
+            throw EmailException.notificationFailed(e.getMessage());
         }
     }
 
@@ -266,10 +264,10 @@ public class EmailServiceImpl implements EmailService {
      */
     @Override
     public void sendTemplateEmail(String email, String templateName, Map<String, Object> templateParams)
-            throws EmailServiceException {
+            throws EmailException {
 
-        validateEmailParameters(email, "用户邮箱不能为空");
-        validateStringParameter(templateName, "模板名称不能为空");
+        validateEmailParameters(email, MessageManager.getMessage(ErrorCode.EXT_EMAIL_001));
+        validateStringParameter(templateName, MessageManager.getMessage(ErrorCode.EXT_EMAIL_008));
 
         if (templateParams == null) {
             templateParams = new HashMap<>();
@@ -279,8 +277,7 @@ public class EmailServiceImpl implements EmailService {
 
         try {
             if (templateEngine == null) {
-                throw new EmailServiceException("TEMPLATE_ENGINE_NOT_AVAILABLE",
-                        "模板引擎不可用，无法发送模板邮件");
+                throw EmailException.templateEngineUnavailable();
             }
 
             // 渲染模板内容
@@ -290,9 +287,8 @@ public class EmailServiceImpl implements EmailService {
             log.info("模板邮件发送成功: email={}, template={}", email, templateName);
 
         } catch (Exception e) {
-            String errorMessage = "发送模板邮件失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new EmailServiceException("TEMPLATE_EMAIL_FAILED", errorMessage, e);
+            log.error("发送模板邮件失败: {}", e.getMessage(), e);
+            throw EmailException.templateSendFailed(templateName, e.getMessage());
         }
     }
 
@@ -304,14 +300,14 @@ public class EmailServiceImpl implements EmailService {
      */
     @Override
     public BatchEmailResult sendBatchEmails(List<String> emails, String subject, String content)
-            throws EmailServiceException {
+            throws EmailException {
 
         if (emails == null || emails.isEmpty()) {
-            throw new IllegalArgumentException("邮箱列表不能为空");
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.EXT_EMAIL_009));
         }
 
-        validateStringParameter(subject, "邮件主题不能为空");
-        validateStringParameter(content, "邮件内容不能为空");
+        validateStringParameter(subject, MessageManager.getMessage(ErrorCode.EXT_EMAIL_010));
+        validateStringParameter(content, MessageManager.getMessage(ErrorCode.EXT_EMAIL_011));
 
         log.info("准备批量发送邮件: count={}, subject={}", emails.size(), subject);
 
@@ -359,9 +355,8 @@ public class EmailServiceImpl implements EmailService {
             return new BatchEmailResult(validEmails.size(), successCount, failureCount, failedEmails);
 
         } catch (Exception e) {
-            String errorMessage = "批量发送邮件失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new EmailServiceException("BATCH_EMAIL_FAILED", errorMessage, e);
+            log.error("批量发送邮件失败: {}", e.getMessage(), e);
+            throw EmailException.batchSendFailed(e.getMessage());
         }
     }
 
@@ -383,7 +378,7 @@ public class EmailServiceImpl implements EmailService {
      * 目前提供了基础的框架，具体实现可以根据需要扩展。</p>
      */
     @Override
-    public EmailStatus getEmailStatus(String messageId) throws EmailServiceException {
+    public EmailStatus getEmailStatus(String messageId) throws EmailException {
         // 这里应该调用邮件服务商的API来查询状态
         // 目前返回一个默认状态，实际实现需要根据具体的邮件服务商API来完成
         log.debug("查询邮件状态: messageId={}", messageId);
@@ -593,7 +588,7 @@ public class EmailServiceImpl implements EmailService {
             throw new IllegalArgumentException(errorMessage);
         }
         if (!isValidEmail(email)) {
-            throw new IllegalArgumentException("邮箱格式不正确: " + email);
+            throw new IllegalArgumentException(MessageManager.getMessage(ErrorCode.EXT_EMAIL_012, email));
         }
     }
 

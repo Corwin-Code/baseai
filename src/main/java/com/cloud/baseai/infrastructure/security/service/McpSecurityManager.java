@@ -1,7 +1,8 @@
 package com.cloud.baseai.infrastructure.security.service;
 
 import com.cloud.baseai.infrastructure.config.McpProperties;
-import com.cloud.baseai.infrastructure.exception.McpException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.McpToolException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -46,7 +47,7 @@ public class McpSecurityManager {
      * @param clientIp 客户端IP
      * @param apiKey   API密钥
      * @return 验证通过返回true
-     * @throws McpException 验证失败时抛出异常
+     * @throws McpToolException 验证失败时抛出异常
      */
     public boolean validateAccess(Long tenantId, String toolCode, String clientIp, String apiKey) {
         log.debug("验证工具访问权限: tenantId={}, toolCode={}, clientIp={}", tenantId, toolCode, clientIp);
@@ -87,8 +88,7 @@ public class McpSecurityManager {
 
         int used = quotaUsed != null ? quotaUsed : 0;
         if (used >= quotaLimit) {
-            throw new McpException("QUOTA_EXCEEDED",
-                    String.format("租户 %d 的工具 %s 配额已用完: %d/%d", tenantId, toolCode, used, quotaLimit));
+            throw McpToolException.quotaExceeded(String.valueOf(tenantId), used, quotaLimit);
         }
 
         // 检查是否接近配额限制
@@ -117,14 +117,12 @@ public class McpSecurityManager {
             // 检查SQL注入风险
             if (value instanceof String stringValue) {
                 if (containsSqlInjectionPattern(stringValue)) {
-                    throw new McpException("DANGEROUS_PARAMETER",
-                            "参数包含潜在的SQL注入模式: " + key);
+                    throw new McpToolException(ErrorCode.PARAM_009, key);
                 }
 
                 // 检查脚本注入风险
                 if (containsScriptInjectionPattern(stringValue)) {
-                    throw new McpException("DANGEROUS_PARAMETER",
-                            "参数包含潜在的脚本注入模式: " + key);
+                    throw new McpToolException(ErrorCode.PARAM_010, key);
                 }
             }
         }
@@ -139,13 +137,13 @@ public class McpSecurityManager {
      */
     private void validateIpAddress(String clientIp) {
         if (clientIp == null || clientIp.trim().isEmpty()) {
-            throw new McpException("INVALID_IP", "客户端IP地址为空");
+            throw new McpToolException(ErrorCode.PARAM_005);
         }
 
         if (securityConfig.getAllowedIps().length > 0) {
             boolean allowed = Arrays.asList(securityConfig.getAllowedIps()).contains(clientIp);
             if (!allowed) {
-                throw new McpException("IP_NOT_ALLOWED", "IP地址不在白名单中: " + clientIp);
+                throw new McpToolException(ErrorCode.PARAM_006, clientIp);
             }
         }
     }
@@ -155,13 +153,13 @@ public class McpSecurityManager {
      */
     private void validateApiKey(String apiKey) {
         if (apiKey == null || apiKey.trim().isEmpty()) {
-            throw new McpException("MISSING_API_KEY", "API密钥不能为空");
+            throw new McpToolException(ErrorCode.PARAM_007);
         }
 
         // 这里可以实现更复杂的API密钥验证逻辑
         // 比如检查密钥格式、过期时间、签名等
         if (apiKey.length() < 16) {
-            throw new McpException("INVALID_API_KEY", "API密钥格式无效");
+            throw new McpToolException(ErrorCode.PARAM_008);
         }
     }
 
@@ -180,8 +178,7 @@ public class McpSecurityManager {
 
         // 检查当前窗口内的请求数
         if (info.requests.size() >= 100) { // 每分钟最多100次请求
-            throw new McpException("RATE_LIMIT_EXCEEDED",
-                    String.format("租户 %d 的工具 %s 请求频率过高", tenantId, toolCode));
+            throw new McpToolException(ErrorCode.BIZ_MCP_017, tenantId, toolCode);
         }
 
         // 记录当前请求

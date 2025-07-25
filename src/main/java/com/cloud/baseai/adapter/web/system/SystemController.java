@@ -6,7 +6,7 @@ import com.cloud.baseai.application.system.command.RetryTaskCommand;
 import com.cloud.baseai.application.system.command.UpdateSystemSettingCommand;
 import com.cloud.baseai.application.system.dto.*;
 import com.cloud.baseai.application.system.service.SystemApplicationService;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;

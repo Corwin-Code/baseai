@@ -1,6 +1,7 @@
 package com.cloud.baseai.infrastructure.external.llm.impl;
 
-import com.cloud.baseai.infrastructure.exception.ChatCompletionException;
+import com.cloud.baseai.infrastructure.exception.ChatException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,7 +81,7 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
             // 处理响应
             OpenAIResponse responseBody = response.getBody();
             if (responseBody == null || responseBody.choices().isEmpty()) {
-                throw new ChatCompletionException("EMPTY_RESPONSE", "OpenAI返回空响应");
+                throw new ChatException(ErrorCode.EXT_AI_008);
             }
 
             OpenAIResponse.Choice choice = responseBody.choices().getFirst();
@@ -101,19 +102,19 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
             long duration = System.currentTimeMillis() - startTime;
             log.error("OpenAI API调用失败: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
 
-            throw new ChatCompletionException(
-                    "OPENAI_API_ERROR",
-                    "OpenAI API调用失败: " + e.getResponseBodyAsString(),
+            throw new ChatException(
+                    ErrorCode.EXT_AI_009,
+                    e.getResponseBodyAsString(),
                     e.getStatusCode().value()
             );
 
         } catch (ResourceAccessException e) {
             log.error("OpenAI API网络连接失败", e);
-            throw new ChatCompletionException("NETWORK_ERROR", "网络连接失败，请检查网络状态", e);
+            throw new ChatException(ErrorCode.SYS_NET_004, e);
 
         } catch (Exception e) {
             log.error("OpenAI聊天完成生成异常", e);
-            throw new ChatCompletionException("COMPLETION_ERROR", "生成聊天完成时发生未知错误", e);
+            throw new ChatException(ErrorCode.EXT_AI_020, e);
         }
     }
 
@@ -141,13 +142,13 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
                     processStreamResponse(finalRequest, onChunk);
                 } catch (Exception e) {
                     log.error("流式响应处理失败", e);
-                    throw new ChatCompletionException("STREAM_ERROR", "流式响应处理失败", e);
+                    throw new ChatException(ErrorCode.EXT_AI_021, e);
                 }
             });
 
         } catch (Exception e) {
             log.error("OpenAI流式生成异常", e);
-            throw new ChatCompletionException("STREAM_GENERATION_ERROR", "启动流式生成失败", e);
+            throw new ChatException(ErrorCode.EXT_AI_022, e);
         }
     }
 
@@ -314,7 +315,7 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("流式处理被中断", e);
+            throw new ChatException(ErrorCode.EXT_AI_023, e);
         }
     }
 

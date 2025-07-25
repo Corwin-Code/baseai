@@ -1,6 +1,7 @@
 package com.cloud.baseai.infrastructure.external.llm.impl;
 
-import com.cloud.baseai.infrastructure.exception.ChatCompletionException;
+import com.cloud.baseai.infrastructure.exception.ChatException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -86,7 +87,7 @@ public class ClaudeChatCompletionService implements ChatCompletionService {
             // 处理响应
             ClaudeResponse responseBody = response.getBody();
             if (responseBody == null || responseBody.content().isEmpty()) {
-                throw new ChatCompletionException("CLAUDE_EMPTY_RESPONSE", "Claude返回空响应");
+                throw new ChatException(ErrorCode.EXT_AI_015);
             }
 
             // Claude的响应格式与OpenAI不同，需要特殊处理
@@ -108,15 +109,15 @@ public class ClaudeChatCompletionService implements ChatCompletionService {
             log.error("Claude API调用失败: status={}, body={}",
                     e.getStatusCode(), e.getResponseBodyAsString());
 
-            throw new ChatCompletionException(
-                    "CLAUDE_API_ERROR",
-                    "Claude API调用失败: " + extractClaudeErrorMessage(e.getResponseBodyAsString()),
+            throw new ChatException(
+                    ErrorCode.EXT_AI_016,
+                    extractClaudeErrorMessage(e.getResponseBodyAsString()),
                     e.getStatusCode().value()
             );
 
         } catch (Exception e) {
             log.error("Claude聊天完成生成异常", e);
-            throw new ChatCompletionException("CLAUDE_COMPLETION_ERROR", "生成Claude聊天完成时发生错误", e);
+            throw new ChatException(ErrorCode.EXT_AI_017, e);
         }
     }
 
@@ -135,7 +136,7 @@ public class ClaudeChatCompletionService implements ChatCompletionService {
 
         } catch (Exception e) {
             log.error("Claude流式生成异常", e);
-            throw new ChatCompletionException("CLAUDE_STREAM_ERROR", "Claude流式生成失败", e);
+            throw new ChatException(ErrorCode.EXT_AI_018, e);
         }
     }
 
@@ -342,7 +343,7 @@ public class ClaudeChatCompletionService implements ChatCompletionService {
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Claude流式处理被中断", e);
+            throw new ChatException(ErrorCode.EXT_AI_019, e);
         }
     }
 

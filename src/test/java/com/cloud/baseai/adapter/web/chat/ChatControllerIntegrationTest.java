@@ -3,7 +3,7 @@ package com.cloud.baseai.adapter.web.chat;
 import com.cloud.baseai.application.chat.command.CreateChatThreadCommand;
 import com.cloud.baseai.application.chat.command.SendMessageCommand;
 import com.cloud.baseai.infrastructure.config.ChatTestConfiguration;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

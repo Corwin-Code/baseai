@@ -6,11 +6,11 @@ import com.cloud.baseai.domain.audit.service.AuditService;
 import com.cloud.baseai.domain.user.model.*;
 import com.cloud.baseai.domain.user.repository.*;
 import com.cloud.baseai.domain.user.service.UserDomainService;
-import com.cloud.baseai.infrastructure.exception.UserBusinessException;
-import com.cloud.baseai.infrastructure.exception.UserTechnicalException;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.UserException;
 import com.cloud.baseai.infrastructure.external.email.EmailService;
 import com.cloud.baseai.infrastructure.external.sms.SmsService;
-import com.cloud.baseai.infrastructure.utils.UserConstants;
 import com.cloud.baseai.infrastructure.utils.UserUtils;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -117,17 +117,11 @@ public class UserAppService {
 
             // 第二步：检查用户名和邮箱的唯一性
             if (userRepo.existsByUsername(cmd.username())) {
-                throw new UserBusinessException(
-                        "DUPLICATE_USERNAME",
-                        "用户名已存在：" + cmd.username()
-                );
+                throw UserException.duplicateUsername(cmd.username());
             }
 
             if (userRepo.existsByEmail(cmd.email())) {
-                throw new UserBusinessException(
-                        "DUPLICATE_EMAIL",
-                        "邮箱已被注册：" + cmd.email()
-                );
+                throw new UserException(ErrorCode.BIZ_USER_015, cmd.email());
             }
 
             // 第三步：密码加密处理
@@ -168,10 +162,14 @@ public class UserAppService {
         } catch (Exception e) {
             log.error("用户注册失败: username={}, email={}", cmd.username(), cmd.email(), e);
 
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("USER_REGISTRATION_ERROR", "用户注册处理失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_011)
+                    .cause(e)
+                    .context("operation", "registerUser")
+                    .context("userId", cmd.email())
+                    .build();
         }
     }
 
@@ -185,18 +183,12 @@ public class UserAppService {
         try {
             // 验证激活码的有效性
             if (!userDomainService.isValidActivationCode(cmd.email(), cmd.activationCode())) {
-                throw new UserBusinessException(
-                        "INVALID_ACTIVATION_CODE",
-                        "激活码无效或已过期"
-                );
+                throw new UserException(ErrorCode.BIZ_USER_031);
             }
 
             // 查找用户
             User user = userRepo.findByEmail(cmd.email())
-                    .orElseThrow(() -> new UserBusinessException(
-                            "USER_NOT_FOUND",
-                            "用户不存在：" + cmd.email()
-                    ));
+                    .orElseThrow(() -> UserException.userNotFound(cmd.email()));
 
             // 激活账户
             User activatedUser = user.activate();
@@ -208,10 +200,14 @@ public class UserAppService {
             return toUserProfileDTO(activatedUser);
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("USER_ACTIVATION_ERROR", "用户激活失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_032)
+                    .cause(e)
+                    .context("operation", "activateUser")
+                    .context("userId", cmd.email())
+                    .build();
         }
     }
 
@@ -223,18 +219,19 @@ public class UserAppService {
 
         try {
             User user = userRepo.findById(userId)
-                    .orElseThrow(() -> new UserBusinessException(
-                            "USER_NOT_FOUND",
-                            UserConstants.ErrorMessages.USER_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> UserException.userNotFound(String.valueOf(userId)));
 
             return toUserProfileDTO(user);
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("GET_USER_PROFILE_ERROR", "获取用户资料失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_009)
+                    .cause(e)
+                    .context("operation", "getUserProfile")
+                    .context("userId", userId)
+                    .build();
         }
     }
 
@@ -247,17 +244,11 @@ public class UserAppService {
 
         try {
             User user = userRepo.findById(cmd.userId())
-                    .orElseThrow(() -> new UserBusinessException(
-                            "USER_NOT_FOUND",
-                            UserConstants.ErrorMessages.USER_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> UserException.userNotFound(cmd.email()));
 
             // 如果要更新邮箱，需要检查唯一性
             if (!user.email().equals(cmd.email()) && userRepo.existsByEmail(cmd.email())) {
-                throw new UserBusinessException(
-                        "DUPLICATE_EMAIL",
-                        "邮箱已被其他用户使用：" + cmd.email()
-                );
+                throw new UserException(ErrorCode.BIZ_USER_015, cmd.email());
             }
 
             // 更新用户信息
@@ -270,10 +261,14 @@ public class UserAppService {
             return toUserProfileDTO(updatedUser);
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("UPDATE_USER_PROFILE_ERROR", "更新用户资料失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_010)
+                    .cause(e)
+                    .context("operation", "updateUserProfile")
+                    .context("userId", cmd.userId())
+                    .build();
         }
     }
 
@@ -286,25 +281,16 @@ public class UserAppService {
 
         try {
             User user = userRepo.findById(cmd.userId())
-                    .orElseThrow(() -> new UserBusinessException(
-                            "USER_NOT_FOUND",
-                            UserConstants.ErrorMessages.USER_NOT_FOUND
-                    ));
+                    .orElseThrow(() -> UserException.userNotFound(String.valueOf(cmd.userId())));
 
             // 验证原密码
             if (!passwordEncoder.matches(cmd.oldPassword(), user.passwordHash())) {
-                throw new UserBusinessException(
-                        "INVALID_OLD_PASSWORD",
-                        "原密码错误"
-                );
+                throw new UserException(ErrorCode.BIZ_USER_016);
             }
 
             // 验证新密码强度
             if (!UserUtils.isStrongPassword(cmd.newPassword())) {
-                throw new UserBusinessException(
-                        "WEAK_PASSWORD",
-                        "新密码强度不足，请使用至少8位包含大小写字母、数字和特殊字符的密码"
-                );
+                throw new UserException(ErrorCode.BIZ_USER_018);
             }
 
             // 更新密码
@@ -316,10 +302,14 @@ public class UserAppService {
             recordAuditLog("PASSWORD_CHANGED", user.id(), "用户修改密码");
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("CHANGE_PASSWORD_ERROR", "修改密码失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_020)
+                    .cause(e)
+                    .context("operation", "changePassword")
+                    .context("userId", cmd.userId())
+                    .build();
         }
     }
 
@@ -342,17 +332,11 @@ public class UserAppService {
         try {
             // 验证创建者存在且有权限
             User creator = userRepo.findById(cmd.creatorId())
-                    .orElseThrow(() -> new UserBusinessException(
-                            "USER_NOT_FOUND",
-                            "创建者用户不存在"
-                    ));
+                    .orElseThrow(() -> UserException.userNotFound(String.valueOf(cmd.creatorId())));
 
             // 检查组织名称唯一性
             if (tenantRepo.existsByOrgName(cmd.orgName())) {
-                throw new UserBusinessException(
-                        "DUPLICATE_TENANT_NAME",
-                        "组织名称已存在：" + cmd.orgName()
-                );
+                throw new UserException(ErrorCode.BIZ_TENANT_002, cmd.orgName());
             }
 
             // 创建租户
@@ -365,10 +349,7 @@ public class UserAppService {
 
             // 获取管理员角色
             Role adminRole = roleRepo.findByName("TENANT_ADMIN")
-                    .orElseThrow(() -> new UserTechnicalException(
-                            "ADMIN_ROLE_NOT_FOUND",
-                            "系统管理员角色未找到"
-                    ));
+                    .orElseThrow(() -> new UserException(ErrorCode.BIZ_ROLE_002));
 
             // 将创建者设置为租户管理员
             UserTenant userTenant = UserTenant.create(
@@ -386,10 +367,14 @@ public class UserAppService {
             return toTenantDTO(savedTenant, getCreatorInfo(creator));
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException || e instanceof UserTechnicalException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("CREATE_TENANT_ERROR", "创建租户失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TENANT_011)
+                    .cause(e)
+                    .context("operation", "createTenant")
+                    .context("orgName", cmd.orgName())
+                    .build();
         }
     }
 
@@ -402,10 +387,7 @@ public class UserAppService {
         try {
             // 验证用户存在
             if (!userRepo.existsById(userId)) {
-                throw new UserBusinessException(
-                        "USER_NOT_FOUND",
-                        UserConstants.ErrorMessages.USER_NOT_FOUND
-                );
+                throw UserException.userNotFound(String.valueOf(userId));
             }
 
             // 查询用户的租户关联
@@ -453,10 +435,14 @@ public class UserAppService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("GET_USER_TENANTS_ERROR", "获取用户租户列表失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TENANT_014)
+                    .cause(e)
+                    .context("operation", "getUserTenants")
+                    .context("userId", userId)
+                    .build();
         }
     }
 
@@ -468,10 +454,7 @@ public class UserAppService {
 
         try {
             Tenant tenant = tenantRepo.findById(tenantId)
-                    .orElseThrow(() -> new UserBusinessException(
-                            "TENANT_NOT_FOUND",
-                            "租户不存在"
-                    ));
+                    .orElseThrow(() -> UserException.tenantNotFound(String.valueOf(tenantId)));
 
             // 统计成员数量
             long memberCount = userTenantRepo.countByTenantId(tenantId);
@@ -491,10 +474,14 @@ public class UserAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("GET_TENANT_DETAIL_ERROR", "获取租户详情失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TENANT_013)
+                    .cause(e)
+                    .context("operation", "getTenantDetail")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -507,18 +494,12 @@ public class UserAppService {
 
         try {
             Tenant tenant = tenantRepo.findById(cmd.tenantId())
-                    .orElseThrow(() -> new UserBusinessException(
-                            "TENANT_NOT_FOUND",
-                            "租户不存在"
-                    ));
+                    .orElseThrow(() -> UserException.tenantNotFound(String.valueOf(cmd.tenantId())));
 
             // 如果要更新组织名称，检查唯一性
             if (!tenant.orgName().equals(cmd.orgName()) &&
                     tenantRepo.existsByOrgName(cmd.orgName())) {
-                throw new UserBusinessException(
-                        "DUPLICATE_TENANT_NAME",
-                        "组织名称已存在：" + cmd.orgName()
-                );
+                throw new UserException(ErrorCode.BIZ_TENANT_002, cmd.orgName());
             }
 
             // 更新租户信息
@@ -531,10 +512,14 @@ public class UserAppService {
             return toTenantDTO(updatedTenant, null);
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("UPDATE_TENANT_ERROR", "更新租户信息失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TENANT_012)
+                    .cause(e)
+                    .context("operation", "updateTenant")
+                    .context("tenantId", cmd.tenantId())
+                    .build();
         }
     }
 
@@ -550,24 +535,15 @@ public class UserAppService {
         try {
             // 验证租户存在
             Tenant tenant = tenantRepo.findById(tenantId)
-                    .orElseThrow(() -> new UserBusinessException(
-                            "TENANT_NOT_FOUND",
-                            "租户不存在"
-                    ));
+                    .orElseThrow(() -> UserException.tenantNotFound(String.valueOf(tenantId)));
 
             // 验证角色存在
             Role role = roleRepo.findById(cmd.roleId())
-                    .orElseThrow(() -> new UserBusinessException(
-                            "ROLE_NOT_FOUND",
-                            "角色不存在"
-                    ));
+                    .orElseThrow(() -> new UserException(ErrorCode.BIZ_ROLE_001));
 
             // 验证邀请者权限
             if (!userDomainService.canInviteMembers(cmd.inviterId(), tenantId)) {
-                throw new UserBusinessException(
-                        "INSUFFICIENT_PERMISSIONS",
-                        "您没有邀请成员的权限"
-                );
+                throw new UserException(ErrorCode.BIZ_TENANT_009);
             }
 
             // 检查是否已经是成员
@@ -576,10 +552,7 @@ public class UserAppService {
                 boolean isMember = userTenantRepo.existsByUserIdAndTenantId(
                         existingUser.get().id(), tenantId);
                 if (isMember) {
-                    throw new UserBusinessException(
-                            "ALREADY_MEMBER",
-                            "用户已经是该租户的成员"
-                    );
+                    throw new UserException(ErrorCode.BIZ_TENANT_007);
                 }
             }
 
@@ -604,10 +577,14 @@ public class UserAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("INVITE_MEMBER_ERROR", "邀请成员失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TENANT_010)
+                    .cause(e)
+                    .context("operation", "inviteMember")
+                    .context("inviter", cmd.inviterId())
+                    .build();
         }
     }
 
@@ -621,10 +598,7 @@ public class UserAppService {
         try {
             // 验证租户存在
             if (!tenantRepo.existsById(tenantId)) {
-                throw new UserBusinessException(
-                        "TENANT_NOT_FOUND",
-                        "租户不存在"
-                );
+                throw UserException.tenantNotFound(String.valueOf(tenantId));
             }
 
             // 查询成员列表
@@ -679,10 +653,14 @@ public class UserAppService {
             return new PageResultDTO<>(members, total, page, size);
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("GET_TENANT_MEMBERS_ERROR", "获取租户成员失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TENANT_005)
+                    .cause(e)
+                    .context("operation", "getTenantMembers")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -697,24 +675,15 @@ public class UserAppService {
         try {
             // 验证成员关系存在
             UserTenant userTenant = userTenantRepo.findByUserIdAndTenantId(userId, tenantId)
-                    .orElseThrow(() -> new UserBusinessException(
-                            "MEMBER_NOT_FOUND",
-                            "用户不是该租户的成员"
-                    ));
+                    .orElseThrow(() -> new UserException(ErrorCode.BIZ_TENANT_006));
 
             // 验证新角色存在
             Role newRole = roleRepo.findById(cmd.roleId())
-                    .orElseThrow(() -> new UserBusinessException(
-                            "ROLE_NOT_FOUND",
-                            "角色不存在"
-                    ));
+                    .orElseThrow(() -> new UserException(ErrorCode.BIZ_ROLE_001));
 
             // 验证操作者权限
             if (!userDomainService.canManageMembers(cmd.operatorId(), tenantId)) {
-                throw new UserBusinessException(
-                        "INSUFFICIENT_PERMISSIONS",
-                        "您没有管理成员的权限"
-                );
+                throw new UserException(ErrorCode.BIZ_TENANT_009);
             }
 
             // 更新角色
@@ -723,10 +692,7 @@ public class UserAppService {
 
             // 获取用户信息构建返回对象
             User user = userRepo.findById(userId)
-                    .orElseThrow(() -> new UserTechnicalException(
-                            "USER_NOT_FOUND",
-                            "用户数据不一致"
-                    ));
+                    .orElseThrow(() -> new UserException(ErrorCode.BIZ_USER_008));
 
             // 记录审计日志
             recordAuditLog("MEMBER_ROLE_UPDATED", tenantId,
@@ -745,10 +711,14 @@ public class UserAppService {
             );
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException || e instanceof UserTechnicalException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("UPDATE_MEMBER_ROLE_ERROR", "更新成员角色失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_ROLE_006)
+                    .cause(e)
+                    .context("operation", "updateMemberRole")
+                    .context("userId", userId)
+                    .build();
         }
     }
 
@@ -763,33 +733,21 @@ public class UserAppService {
         try {
             // 验证成员关系存在
             UserTenant userTenant = userTenantRepo.findByUserIdAndTenantId(userId, tenantId)
-                    .orElseThrow(() -> new UserBusinessException(
-                            "MEMBER_NOT_FOUND",
-                            "用户不是该租户的成员"
-                    ));
+                    .orElseThrow(() -> new UserException(ErrorCode.BIZ_TENANT_006));
 
             // 验证操作者权限
             if (!userDomainService.canManageMembers(operatorId, tenantId)) {
-                throw new UserBusinessException(
-                        "INSUFFICIENT_PERMISSIONS",
-                        "您没有管理成员的权限"
-                );
+                throw new UserException(ErrorCode.BIZ_TENANT_009);
             }
 
             // 不能移除自己
             if (userId.equals(operatorId)) {
-                throw new UserBusinessException(
-                        "CANNOT_REMOVE_SELF",
-                        "不能移除自己"
-                );
+                throw new UserException(ErrorCode.BIZ_TENANT_016);
             }
 
             // 检查是否是最后一个管理员
             if (userDomainService.isLastAdmin(userId, tenantId)) {
-                throw new UserBusinessException(
-                        "CANNOT_REMOVE_LAST_ADMIN",
-                        "不能移除最后一个管理员"
-                );
+                throw new UserException(ErrorCode.BIZ_TENANT_017);
             }
 
             // 移除成员
@@ -803,10 +761,14 @@ public class UserAppService {
             recordAuditLog("MEMBER_REMOVED", tenantId, "移除成员：" + username);
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("REMOVE_MEMBER_ERROR", "移除成员失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_TENANT_015)
+                    .cause(e)
+                    .context("operation", "removeTenantMember")
+                    .context("userId", userId)
+                    .build();
         }
     }
 
@@ -823,7 +785,7 @@ public class UserAppService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            throw new UserTechnicalException("GET_ROLES_ERROR", "获取角色列表失败", e);
+            throw new UserException(ErrorCode.BIZ_ROLE_004);
         }
     }
 
@@ -849,7 +811,7 @@ public class UserAppService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            throw new UserTechnicalException("GET_USER_GLOBAL_ROLES_ERROR", "获取用户全局角色失败", e);
+            throw new UserException(ErrorCode.BIZ_ROLE_003);
         }
     }
 
@@ -863,19 +825,13 @@ public class UserAppService {
         try {
             // 验证用户存在
             if (!userRepo.existsById(userId)) {
-                throw new UserBusinessException(
-                        "USER_NOT_FOUND",
-                        UserConstants.ErrorMessages.USER_NOT_FOUND
-                );
+                throw UserException.userNotFound(String.valueOf(userId));
             }
 
             // 验证角色存在
             List<Role> roles = roleRepo.findByIds(new ArrayList<>(cmd.roleIds()));
             if (roles.size() != cmd.roleIds().size()) {
-                throw new UserBusinessException(
-                        "ROLE_NOT_FOUND",
-                        "部分角色不存在"
-                );
+                throw new UserException(ErrorCode.BIZ_ROLE_001);
             }
 
             // 删除现有的全局角色
@@ -895,10 +851,14 @@ public class UserAppService {
             recordAuditLog("GLOBAL_ROLES_ASSIGNED", userId, "分配全局角色：" + roleNames);
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("ASSIGN_GLOBAL_ROLES_ERROR", "分配全局角色失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_ROLE_005)
+                    .cause(e)
+                    .context("operation", "assignGlobalRoles")
+                    .context("userId", userId)
+                    .build();
         }
     }
 
@@ -916,10 +876,7 @@ public class UserAppService {
             UserDomainService.InvitationTokenInfo invitationInfo = userDomainService.validateInvitationToken(invitationToken);
 
             if (invitationInfo == null) {
-                throw new UserBusinessException(
-                        "INVALID_INVITATION_TOKEN",
-                        "邀请链接无效或已过期"
-                );
+                throw new UserException(ErrorCode.BIZ_USER_024);
             }
 
             if ("ACCEPT".equals(cmd.action())) {
@@ -927,17 +884,18 @@ public class UserAppService {
             } else if ("REJECT".equals(cmd.action())) {
                 return rejectInvitation(invitationInfo);
             } else {
-                throw new UserBusinessException(
-                        "INVALID_INVITATION_ACTION",
-                        "无效的邀请操作"
-                );
+                throw new UserException(ErrorCode.BIZ_USER_026);
             }
 
         } catch (Exception e) {
-            if (e instanceof UserBusinessException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new UserTechnicalException("RESPOND_INVITATION_ERROR", "处理邀请响应失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_028)
+                    .cause(e)
+                    .context("operation", "respondToInvitation")
+                    .context("userId", cmd.userId())
+                    .build();
         }
     }
 
@@ -952,7 +910,11 @@ public class UserAppService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            throw new UserTechnicalException("GET_PENDING_INVITATIONS_ERROR", "获取待处理邀请失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_027)
+                    .cause(e)
+                    .context("operation", "getPendingInvitations")
+                    .context("email", email)
+                    .build();
         }
     }
 
@@ -975,7 +937,11 @@ public class UserAppService {
             return new PageResultDTO<>(results, total, page, size);
 
         } catch (Exception e) {
-            throw new UserTechnicalException("SEARCH_USERS_ERROR", "搜索用户失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_012)
+                    .cause(e)
+                    .context("operation", "searchUsers")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -987,7 +953,11 @@ public class UserAppService {
             return userDomainService.calculateUserStatistics(tenantId, timeRange);
 
         } catch (Exception e) {
-            throw new UserTechnicalException("GET_USER_STATISTICS_ERROR", "获取用户统计失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_USER_013)
+                    .cause(e)
+                    .context("operation", "getUserStatistics")
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -999,34 +969,22 @@ public class UserAppService {
     private void validateRegistrationRequest(RegisterUserCommand cmd) {
         // 验证用户名格式
         if (!UserUtils.isValidUsername(cmd.username())) {
-            throw new UserBusinessException(
-                    "INVALID_USERNAME",
-                    "用户名格式不正确，只能包含字母、数字、下划线和连字符，长度3-32位"
-            );
+            throw new UserException(ErrorCode.BIZ_USER_017);
         }
 
         // 验证邮箱格式
         if (!UserUtils.isValidEmail(cmd.email())) {
-            throw new UserBusinessException(
-                    "INVALID_EMAIL_FORMAT",
-                    "邮箱格式不正确"
-            );
+            throw new UserException(ErrorCode.BIZ_USER_014);
         }
 
         // 验证密码强度
         if (!UserUtils.isStrongPassword(cmd.password())) {
-            throw new UserBusinessException(
-                    "WEAK_PASSWORD",
-                    "密码强度不足，请使用至少8位包含大小写字母、数字和特殊字符的密码"
-            );
+            throw new UserException(ErrorCode.BIZ_USER_018);
         }
 
         // 验证密码确认
         if (!cmd.password().equals(cmd.confirmPassword())) {
-            throw new UserBusinessException(
-                    "PASSWORD_MISMATCH",
-                    "两次输入的密码不一致"
-            );
+            throw new UserException(ErrorCode.BIZ_USER_019);
         }
     }
 
@@ -1078,18 +1036,12 @@ public class UserAppService {
     private InvitationResponseDTO acceptInvitation(UserDomainService.InvitationTokenInfo invitationInfo, Long userId) {
         // 验证用户存在
         User user = userRepo.findById(userId)
-                .orElseThrow(() -> new UserBusinessException(
-                        "USER_NOT_FOUND",
-                        UserConstants.ErrorMessages.USER_NOT_FOUND
-                ));
+                .orElseThrow(() -> UserException.userNotFound(String.valueOf(userId)));
 
         // 检查是否已经是成员
         boolean isMember = userTenantRepo.existsByUserIdAndTenantId(userId, invitationInfo.tenantId());
         if (isMember) {
-            throw new UserBusinessException(
-                    "ALREADY_MEMBER",
-                    "您已经是该组织的成员"
-            );
+            throw new UserException(ErrorCode.BIZ_TENANT_008);
         }
 
         // 创建成员关系

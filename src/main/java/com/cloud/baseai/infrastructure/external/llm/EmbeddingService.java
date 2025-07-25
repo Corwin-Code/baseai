@@ -1,7 +1,5 @@
 package com.cloud.baseai.infrastructure.external.llm;
 
-import com.cloud.baseai.infrastructure.exception.EmbeddingGenerationException;
-
 /**
  * <h2>向量嵌入服务接口</h2>
  *
@@ -24,7 +22,6 @@ public interface EmbeddingService {
      * @param text      要向量化的文本内容
      * @param modelCode 使用的AI模型标识
      * @return 向量数组，通常是1536维的浮点数数组
-     * @throws EmbeddingGenerationException 当向量生成失败时抛出
      */
     float[] generateEmbedding(String text, String modelCode);
 

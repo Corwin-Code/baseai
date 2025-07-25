@@ -1,10 +1,12 @@
 package com.cloud.baseai.infrastructure.external.llm.impl;
 
 import com.cloud.baseai.infrastructure.config.EmbeddingProperties;
-import com.cloud.baseai.infrastructure.exception.VectorProcessingException;
+import com.cloud.baseai.infrastructure.constants.KbConstants;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
+import com.cloud.baseai.infrastructure.exception.KnowledgeBaseException;
 import com.cloud.baseai.infrastructure.external.llm.EmbeddingService;
 import com.cloud.baseai.infrastructure.utils.EmbeddingUtils;
-import com.cloud.baseai.infrastructure.utils.KbConstants;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.cache.Cache;
@@ -241,7 +243,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
         }
 
         if (!isModelAvailable(modelCode)) {
-            throw new VectorProcessingException("不支持的OpenAI模型: " + modelCode);
+            throw new KnowledgeBaseException(ErrorCode.EXT_AI_005, modelCode);
         }
 
         return modelCode;
@@ -255,9 +257,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
         ModelInfo modelInfo = SUPPORTED_MODELS.get(model);
 
         if (modelInfo != null && estimatedTokens > modelInfo.maxTokens) {
-            throw new VectorProcessingException(
-                    String.format("文本过长，估算Token数: %d，模型限制: %d",
-                            estimatedTokens, modelInfo.maxTokens));
+            throw new KnowledgeBaseException(ErrorCode.EXT_AI_006, estimatedTokens, modelInfo.maxTokens);
         }
     }
 
@@ -278,7 +278,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             if (config.getRateLimit().isLogWarnings()) {
                 log.warn("OpenAI API限流等待超时，请求被拒绝");
             }
-            throw new VectorProcessingException("API请求频率过高，请稍后重试");
+            throw new KnowledgeBaseException(ErrorCode.EXT_AI_007);
         }
     }
 
@@ -313,7 +313,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             if (response.getBody() == null ||
                     response.getBody().data == null ||
                     response.getBody().data.isEmpty()) {
-                throw new VectorProcessingException("OpenAI返回空响应");
+                throw new KnowledgeBaseException(ErrorCode.EXT_AI_008);
             }
 
             List<Double> embedding = response.getBody().data.getFirst().embedding;
@@ -329,10 +329,15 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             return result;
 
         } catch (Exception e) {
-            if (e instanceof VectorProcessingException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new VectorProcessingException("OpenAI API调用失败: " + e.getMessage(), e);
+            throw BusinessException.builder(ErrorCode.EXT_AI_009)
+                    .cause(e)
+                    .context("operation", "callOpenAIAPI")
+                    .context("text", text)
+                    .context("model", model)
+                    .build();
         }
     }
 
@@ -350,7 +355,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             );
 
             if (response.getBody() == null || response.getBody().data == null) {
-                throw new VectorProcessingException("OpenAI返回空响应");
+                throw new KnowledgeBaseException(ErrorCode.EXT_AI_008);
             }
 
             return response.getBody().data.stream()
@@ -367,10 +372,15 @@ public class OpenAIEmbeddingService implements EmbeddingService {
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            if (e instanceof VectorProcessingException) {
+            if (e instanceof BusinessException) {
                 throw e;
             }
-            throw new VectorProcessingException("OpenAI批量API调用失败: " + e.getMessage(), e);
+            throw BusinessException.builder(ErrorCode.EXT_AI_010)
+                    .cause(e)
+                    .context("operation", "callOpenAIBatchAPI")
+                    .context("texts", texts)
+                    .context("model", model)
+                    .build();
         }
     }
 

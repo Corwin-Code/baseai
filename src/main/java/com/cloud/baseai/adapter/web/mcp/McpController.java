@@ -5,7 +5,7 @@ import com.cloud.baseai.application.mcp.command.ExecuteToolCommand;
 import com.cloud.baseai.application.mcp.command.RegisterToolCommand;
 import com.cloud.baseai.application.mcp.dto.*;
 import com.cloud.baseai.application.mcp.service.McpApplicationService;
-import com.cloud.baseai.infrastructure.web.response.ApiResult;
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;

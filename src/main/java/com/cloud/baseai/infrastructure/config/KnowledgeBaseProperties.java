@@ -1,6 +1,6 @@
 package com.cloud.baseai.infrastructure.config;
 
-import com.cloud.baseai.infrastructure.utils.KbConstants;
+import com.cloud.baseai.infrastructure.constants.KbConstants;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;

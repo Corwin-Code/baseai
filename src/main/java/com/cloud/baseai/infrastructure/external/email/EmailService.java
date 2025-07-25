@@ -1,8 +1,8 @@
 package com.cloud.baseai.infrastructure.external.email;
 
+import com.cloud.baseai.infrastructure.exception.EmailException;
 import com.cloud.baseai.infrastructure.external.email.model.BatchEmailResult;
 import com.cloud.baseai.infrastructure.external.email.model.EmailStatus;
-import com.cloud.baseai.infrastructure.exception.EmailServiceException;
 
 import java.util.Map;
 
@@ -28,7 +28,7 @@ import java.util.Map;
  * </ul>
  *
  * <p><b>异常处理策略：</b></p>
- * <p>所有方法都可能抛出 {@link EmailServiceException}，调用方需要妥善处理
+ * <p>所有方法都可能抛出 {@link EmailException}，调用方需要妥善处理
  * 邮件发送失败的情况。建议实现重试机制和降级策略，确保系统的健壮性。</p>
  *
  * <p><b>性能考虑：</b></p>
@@ -46,10 +46,10 @@ public interface EmailService {
      * @param email          用户邮箱地址，必须是有效的邮箱格式
      * @param username       用户名，用于个性化邮件内容
      * @param activationCode 激活码，用于生成激活链接
-     * @throws EmailServiceException    当邮件发送失败时抛出，包含详细的错误信息
+     * @throws EmailException           当邮件发送失败时抛出，包含详细的错误信息
      * @throws IllegalArgumentException 当传入参数无效时抛出
      */
-    void sendActivationEmail(String email, String username, String activationCode) throws EmailServiceException;
+    void sendActivationEmail(String email, String username, String activationCode) throws EmailException;
 
     /**
      * 发送组织邀请邮件
@@ -60,10 +60,10 @@ public interface EmailService {
      * @param email           受邀用户的邮箱地址
      * @param orgName         组织名称，用于标识邀请方
      * @param invitationToken 邀请令牌，用于生成邀请链接
-     * @throws EmailServiceException    当邮件发送失败时抛出
+     * @throws EmailException           当邮件发送失败时抛出
      * @throws IllegalArgumentException 当传入参数无效时抛出
      */
-    void sendInvitationEmail(String email, String orgName, String invitationToken) throws EmailServiceException;
+    void sendInvitationEmail(String email, String orgName, String invitationToken) throws EmailException;
 
     /**
      * 发送密码重置邮件
@@ -74,10 +74,10 @@ public interface EmailService {
      * @param email      用户邮箱地址
      * @param username   用户名，用于个性化邮件内容
      * @param resetToken 重置令牌，用于生成重置链接
-     * @throws EmailServiceException    当邮件发送失败时抛出
+     * @throws EmailException           当邮件发送失败时抛出
      * @throws IllegalArgumentException 当传入参数无效时抛出
      */
-    void sendPasswordResetEmail(String email, String username, String resetToken) throws EmailServiceException;
+    void sendPasswordResetEmail(String email, String username, String resetToken) throws EmailException;
 
     /**
      * 发送通知邮件
@@ -88,10 +88,10 @@ public interface EmailService {
      * @param email   接收邮件的用户邮箱
      * @param subject 邮件主题，应该简洁明了
      * @param content 邮件内容，支持HTML格式
-     * @throws EmailServiceException    当邮件发送失败时抛出
+     * @throws EmailException           当邮件发送失败时抛出
      * @throws IllegalArgumentException 当传入参数无效时抛出
      */
-    void sendNotificationEmail(String email, String subject, String content) throws EmailServiceException;
+    void sendNotificationEmail(String email, String subject, String content) throws EmailException;
 
     /**
      * 使用自定义模板发送邮件
@@ -102,10 +102,10 @@ public interface EmailService {
      * @param email          接收邮件的用户邮箱
      * @param templateName   模板名称，对应配置文件中的模板
      * @param templateParams 模板参数，用于替换模板中的占位符
-     * @throws EmailServiceException    当邮件发送失败时抛出
+     * @throws EmailException           当邮件发送失败时抛出
      * @throws IllegalArgumentException 当传入参数无效时抛出
      */
-    void sendTemplateEmail(String email, String templateName, Map<String, Object> templateParams) throws EmailServiceException;
+    void sendTemplateEmail(String email, String templateName, Map<String, Object> templateParams) throws EmailException;
 
     /**
      * 批量发送邮件
@@ -117,10 +117,10 @@ public interface EmailService {
      * @param subject 邮件主题
      * @param content 邮件内容
      * @return 发送结果，包含成功和失败的邮箱列表
-     * @throws EmailServiceException    当批量发送过程中发生严重错误时抛出
+     * @throws EmailException           当批量发送过程中发生严重错误时抛出
      * @throws IllegalArgumentException 当传入参数无效时抛出
      */
-    BatchEmailResult sendBatchEmails(java.util.List<String> emails, String subject, String content) throws EmailServiceException;
+    BatchEmailResult sendBatchEmails(java.util.List<String> emails, String subject, String content) throws EmailException;
 
     /**
      * 验证邮箱地址格式
@@ -141,7 +141,7 @@ public interface EmailService {
      *
      * @param messageId 邮件消息ID，发送时返回
      * @return 邮件发送状态信息
-     * @throws EmailServiceException 当查询失败时抛出
+     * @throws EmailException 当查询失败时抛出
      */
-    EmailStatus getEmailStatus(String messageId) throws EmailServiceException;
+    EmailStatus getEmailStatus(String messageId) throws EmailException;
 }

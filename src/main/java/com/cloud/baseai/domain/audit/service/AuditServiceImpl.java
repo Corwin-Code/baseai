@@ -3,7 +3,9 @@ package com.cloud.baseai.domain.audit.service;
 import com.cloud.baseai.application.audit.dto.*;
 import com.cloud.baseai.domain.audit.model.SysAuditLog;
 import com.cloud.baseai.domain.audit.repository.SysAuditLogRepository;
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
+import com.cloud.baseai.infrastructure.exception.AuditException;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -212,7 +214,18 @@ public class AuditServiceImpl implements AuditService {
                     userId, action, targetType, targetId);
 
         } catch (Exception e) {
-            handleAuditError("记录用户操作审计失败", e);
+            log.error("记录用户操作审计失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_034)
+                    .cause(e)
+                    .context("operation", "recordUserAction")
+                    .context("userId", userId)
+                    .context("action", action)
+                    .context("targetType", targetType)
+                    .context("detail", detail)
+                    .build();
         } finally {
             recordPerformanceMetric("recordUserActionFull", startTime);
         }
@@ -264,7 +277,16 @@ public class AuditServiceImpl implements AuditService {
                     eventType, severity, eventSource);
 
         } catch (Exception e) {
-            handleAuditError("记录系统事件审计失败", e);
+            log.error("记录系统事件审计失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_035)
+                    .cause(e)
+                    .context("operation", "recordSystemEvent")
+                    .context("eventType", eventType)
+                    .context("description", description)
+                    .build();
         } finally {
             recordPerformanceMetric("recordSystemEvent", startTime);
         }
@@ -332,7 +354,16 @@ public class AuditServiceImpl implements AuditService {
                     securityEventType, riskLevel, userId, sourceIp);
 
         } catch (Exception e) {
-            handleAuditError("记录安全事件审计失败", e);
+            log.error("记录安全事件审计失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_036)
+                    .cause(e)
+                    .context("operation", "recordSecurityEvent")
+                    .context("securityEventType", securityEventType)
+                    .context("description", description)
+                    .build();
         } finally {
             recordPerformanceMetric("recordSecurityEvent", startTime);
         }
@@ -399,7 +430,16 @@ public class AuditServiceImpl implements AuditService {
                     businessOperation, operatorId, businessObjectId);
 
         } catch (Exception e) {
-            handleAuditError("记录业务操作审计失败", e);
+            log.error("记录业务操作审计失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_037)
+                    .cause(e)
+                    .context("operation", "recordBusinessOperation")
+                    .context("operationType", businessOperation)
+                    .context("operator", operatorId)
+                    .build();
         } finally {
             recordPerformanceMetric("recordBusinessOperation", startTime);
         }
@@ -413,7 +453,7 @@ public class AuditServiceImpl implements AuditService {
      */
     @Override
     @Transactional
-    public BatchAuditResult recordBatchEvents(List<AuditEvent> auditEvents) throws AuditServiceException {
+    public BatchAuditResult recordBatchEvents(List<AuditEvent> auditEvents) throws AuditException {
         long startTime = System.currentTimeMillis();
 
         if (auditEvents == null || auditEvents.isEmpty()) {
@@ -459,9 +499,15 @@ public class AuditServiceImpl implements AuditService {
             return new BatchAuditResult(auditEvents.size(), successCount, failureCount, errors);
 
         } catch (Exception e) {
-            String errorMessage = "批量记录审计事件失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new AuditServiceException("BATCH_AUDIT_FAILED", errorMessage, e);
+            log.error("批量记录审计事件失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_038)
+                    .cause(e)
+                    .context("operation", "recordBatchEvents")
+                    .context("total", auditEvents.size())
+                    .build();
         } finally {
             recordPerformanceMetric("recordBatchEvents", startTime);
         }
@@ -475,7 +521,7 @@ public class AuditServiceImpl implements AuditService {
      */
     @Override
     public PagedAuditResult queryUserActions(Long userId, OffsetDateTime startTime, OffsetDateTime endTime,
-                                             List<String> actions, int page, int size) throws AuditServiceException {
+                                             List<String> actions, int page, int size) throws AuditException {
         long startTime2 = System.currentTimeMillis();
 
         try {
@@ -502,9 +548,15 @@ public class AuditServiceImpl implements AuditService {
             return new PagedAuditResult(events, auditPage.getTotalElements(), page, size);
 
         } catch (Exception e) {
-            String errorMessage = "查询用户操作历史失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new AuditServiceException("QUERY_USER_ACTIONS_FAILED", errorMessage, e);
+            log.error("查询用户操作历史失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_039)
+                    .cause(e)
+                    .context("operation", "queryUserActions")
+                    .context("userId", userId)
+                    .build();
         } finally {
             recordPerformanceMetric("queryUserActions", startTime2);
         }
@@ -519,7 +571,7 @@ public class AuditServiceImpl implements AuditService {
     @Override
     public PagedAuditResult querySecurityEvents(OffsetDateTime startTime, OffsetDateTime endTime,
                                                 List<RiskLevel> riskLevels, List<String> eventTypes,
-                                                String sourceIp, int page, int size) throws AuditServiceException {
+                                                String sourceIp, int page, int size) throws AuditException {
         long startTime2 = System.currentTimeMillis();
 
         try {
@@ -530,7 +582,7 @@ public class AuditServiceImpl implements AuditService {
 
             // 构建查询条件
             List<String> riskLevelStrings = riskLevels != null ?
-                    riskLevels.stream().map(Enum::name).collect(Collectors.toList()) : null;
+                    riskLevels.stream().map(Enum::name).toList() : null;
 
             // 创建分页参数
             Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -551,9 +603,16 @@ public class AuditServiceImpl implements AuditService {
             return new PagedAuditResult(securityEvents, securityEvents.size(), page, size);
 
         } catch (Exception e) {
-            String errorMessage = "查询安全事件历史失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new AuditServiceException("QUERY_SECURITY_EVENTS_FAILED", errorMessage, e);
+            log.error("查询安全事件历史失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_040)
+                    .cause(e)
+                    .context("operation", "querySecurityEvents")
+                    .context("startTime", startTime)
+                    .context("endTime", endTime)
+                    .build();
         } finally {
             recordPerformanceMetric("querySecurityEvents", startTime2);
         }
@@ -568,7 +627,7 @@ public class AuditServiceImpl implements AuditService {
     @Override
     @Async
     public AuditReportResult generateAuditReport(String reportType, Map<String, Object> reportParams,
-                                                 String outputFormat) throws AuditServiceException {
+                                                 String outputFormat) throws AuditException {
         long startTime = System.currentTimeMillis();
 
         try {
@@ -602,9 +661,15 @@ public class AuditServiceImpl implements AuditService {
             return result;
 
         } catch (Exception e) {
-            String errorMessage = "生成审计报告失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new AuditServiceException("GENERATE_REPORT_FAILED", errorMessage, e);
+            log.error("生成审计报告失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_041)
+                    .cause(e)
+                    .context("operation", "generateAuditReport")
+                    .context("reportType", reportType)
+                    .build();
         } finally {
             recordPerformanceMetric("generateAuditReport", startTime);
         }
@@ -618,7 +683,7 @@ public class AuditServiceImpl implements AuditService {
      */
     @Override
     public AuditStatistics getAuditStatistics(String statisticsType, String timeRange,
-                                              Map<String, Object> filters) throws AuditServiceException {
+                                              Map<String, Object> filters) throws AuditException {
         long startTime = System.currentTimeMillis();
 
         try {
@@ -639,9 +704,16 @@ public class AuditServiceImpl implements AuditService {
             return statistics;
 
         } catch (Exception e) {
-            String errorMessage = "获取审计统计信息失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new AuditServiceException("GET_STATISTICS_FAILED", errorMessage, e);
+            log.error("获取审计统计信息失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_042)
+                    .cause(e)
+                    .context("operation", "getAuditStatistics")
+                    .context("statisticsType", statisticsType)
+                    .context("timeRange", timeRange)
+                    .build();
         } finally {
             recordPerformanceMetric("getAuditStatistics", startTime);
         }
@@ -655,7 +727,7 @@ public class AuditServiceImpl implements AuditService {
      */
     @Override
     @Transactional
-    public void configureRetentionPolicy(RetentionPolicy retentionPolicy) throws AuditServiceException {
+    public void configureRetentionPolicy(RetentionPolicy retentionPolicy) throws AuditException {
         long startTime = System.currentTimeMillis();
 
         try {
@@ -675,9 +747,16 @@ public class AuditServiceImpl implements AuditService {
             log.info("数据保留策略配置完成: {}", retentionPolicy.policyName());
 
         } catch (Exception e) {
-            String errorMessage = "配置数据保留策略失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new AuditServiceException("CONFIGURE_RETENTION_POLICY_FAILED", errorMessage, e);
+            log.error("配置数据保留策略失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_043)
+                    .cause(e)
+                    .context("operation", "configureRetentionPolicy")
+                    .context("policyName", retentionPolicy.policyName())
+                    .context("retentionDays", retentionPolicy.retentionDays())
+                    .build();
         } finally {
             recordPerformanceMetric("configureRetentionPolicy", startTime);
         }
@@ -692,7 +771,7 @@ public class AuditServiceImpl implements AuditService {
     @Override
     @Async
     public IntegrityCheckResult verifyDataIntegrity(OffsetDateTime startTime, OffsetDateTime endTime)
-            throws AuditServiceException {
+            throws AuditException {
         long startTime2 = System.currentTimeMillis();
 
         try {
@@ -707,9 +786,16 @@ public class AuditServiceImpl implements AuditService {
             return result;
 
         } catch (Exception e) {
-            String errorMessage = "验证审计数据完整性失败: " + e.getMessage();
-            log.error(errorMessage, e);
-            throw new AuditServiceException("VERIFY_INTEGRITY_FAILED", errorMessage, e);
+            log.error("验证审计数据完整性失败", e);
+            if (e instanceof BusinessException) {
+                throw e;
+            }
+            throw BusinessException.builder(ErrorCode.BIZ_AUDIT_044)
+                    .cause(e)
+                    .context("operation", "verifyDataIntegrity")
+                    .context("startTime", startTime)
+                    .context("endTime", endTime)
+                    .build();
         } finally {
             recordPerformanceMetric("verifyDataIntegrity", startTime2);
         }
@@ -801,7 +887,7 @@ public class AuditServiceImpl implements AuditService {
     /**
      * 提交审计事件到队列
      */
-    private void submitAuditEvent(AuditEvent event) throws AuditServiceException {
+    private void submitAuditEvent(AuditEvent event) throws AuditException {
         if (asyncEnabled) {
             boolean offered = auditQueue.offer(event);
             if (!offered) {
@@ -816,12 +902,12 @@ public class AuditServiceImpl implements AuditService {
     /**
      * 同步处理单个审计事件
      */
-    private void processEventSynchronously(AuditEvent event) throws AuditServiceException {
+    private void processEventSynchronously(AuditEvent event) throws AuditException {
         try {
             SysAuditLog auditLog = convertAuditEventToLog(event);
             auditLogRepository.save(auditLog);
         } catch (Exception e) {
-            throw new AuditServiceException("PROCESS_EVENT_FAILED", "处理审计事件失败", e);
+            throw new AuditException(ErrorCode.BIZ_AUDIT_045, e);
         }
     }
 
@@ -913,15 +999,6 @@ public class AuditServiceImpl implements AuditService {
         } catch (JsonProcessingException e) {
             log.error("序列化元数据失败", e);
             return "{}";
-        }
-    }
-
-    private void handleAuditError(String message, Exception e) throws Exception {
-        log.error(message, e);
-        if (e instanceof AuditServiceException) {
-            throw e;
-        } else {
-            throw new AuditServiceException("AUDIT_ERROR", message, e);
         }
     }
 

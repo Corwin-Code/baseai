@@ -1,7 +1,7 @@
 package com.cloud.baseai.domain.audit.service;
 
 import com.cloud.baseai.application.audit.dto.*;
-import com.cloud.baseai.infrastructure.exception.AuditServiceException;
+import com.cloud.baseai.infrastructure.exception.AuditException;
 import lombok.Getter;
 
 import java.time.OffsetDateTime;
@@ -44,7 +44,7 @@ public interface AuditService {
      * @param action   操作动作，如"USER_LOGIN"、"DATA_UPDATE"等，建议使用标准化的动作码
      * @param targetId 操作目标ID，可以是用户ID、数据ID等，便于后续关联查询
      * @param detail   操作详情，包含操作的具体描述和关键参数
-     * @throws AuditServiceException 当记录失败时抛出，但不应该影响主业务流程
+     * @throws AuditException 当记录失败时抛出，但不应该影响主业务流程
      */
     void recordUserAction(String action, Long targetId, String detail) throws Exception;
 
@@ -62,7 +62,7 @@ public interface AuditService {
      * @param ipAddress      用户IP地址，用于地理位置分析和安全监控
      * @param userAgent      用户代理字符串，包含浏览器和设备信息
      * @param additionalData 额外的上下文数据，以键值对形式存储
-     * @throws AuditServiceException 当记录失败时抛出
+     * @throws AuditException 当记录失败时抛出
      */
     void recordUserAction(Long userId, String action, String targetType, Long targetId,
                           String detail, String ipAddress, String userAgent,
@@ -80,7 +80,7 @@ public interface AuditService {
      * @param description 事件描述，详细说明事件的内容和影响
      * @param severity    事件严重程度，用于事件分级处理
      * @param metadata    事件元数据，包含事件的详细参数和状态信息
-     * @throws AuditServiceException 当记录失败时抛出
+     * @throws AuditException 当记录失败时抛出
      */
     void recordSystemEvent(String eventType, String eventSource, String description,
                            EventSeverity severity, Map<String, Object> metadata) throws Exception;
@@ -97,7 +97,7 @@ public interface AuditService {
      * @param riskLevel         风险等级，用于安全事件的优先级处理
      * @param sourceIp          源IP地址，用于地理位置分析和威胁情报关联
      * @param affectedResources 受影响的资源列表，用于影响范围评估
-     * @throws AuditServiceException 当记录失败时抛出
+     * @throws AuditException 当记录失败时抛出
      */
     void recordSecurityEvent(String securityEventType, Long userId, String description,
                              RiskLevel riskLevel, String sourceIp,
@@ -114,7 +114,7 @@ public interface AuditService {
      * @param businessObjectId  业务对象ID，如订单ID、合同ID等
      * @param operationDetails  操作详情，包含业务操作的关键参数
      * @param businessContext   业务上下文，如所属部门、项目等
-     * @throws AuditServiceException 当记录失败时抛出
+     * @throws AuditException 当记录失败时抛出
      */
     void recordBusinessOperation(String businessOperation, Long operatorId,
                                  String businessObjectId, Map<String, Object> operationDetails,
@@ -128,9 +128,9 @@ public interface AuditService {
      *
      * @param auditEvents 审计事件列表，每个事件包含完整的审计信息
      * @return 批量记录结果，包含成功和失败的统计信息
-     * @throws AuditServiceException 当批量记录失败时抛出
+     * @throws AuditException 当批量记录失败时抛出
      */
-    BatchAuditResult recordBatchEvents(List<AuditEvent> auditEvents) throws AuditServiceException;
+    BatchAuditResult recordBatchEvents(List<AuditEvent> auditEvents) throws AuditException;
 
     /**
      * 查询用户操作历史
@@ -149,10 +149,10 @@ public interface AuditService {
      * @param page      页码，从0开始
      * @param size      页大小，建议不超过100
      * @return 查询结果，包含审计记录和分页信息
-     * @throws AuditServiceException 当查询失败时抛出
+     * @throws AuditException 当查询失败时抛出
      */
     PagedAuditResult queryUserActions(Long userId, OffsetDateTime startTime, OffsetDateTime endTime,
-                                      List<String> actions, int page, int size) throws AuditServiceException;
+                                      List<String> actions, int page, int size) throws AuditException;
 
     /**
      * 查询安全事件历史
@@ -168,11 +168,11 @@ public interface AuditService {
      * @param page       页码
      * @param size       页大小
      * @return 安全事件查询结果
-     * @throws AuditServiceException 当查询失败时抛出
+     * @throws AuditException 当查询失败时抛出
      */
     PagedAuditResult querySecurityEvents(OffsetDateTime startTime, OffsetDateTime endTime,
                                          List<RiskLevel> riskLevels, List<String> eventTypes,
-                                         String sourceIp, int page, int size) throws AuditServiceException;
+                                         String sourceIp, int page, int size) throws AuditException;
 
     /**
      * 生成审计报告
@@ -184,10 +184,10 @@ public interface AuditService {
      * @param reportParams 报告参数，包含时间范围、筛选条件等
      * @param outputFormat 输出格式，如"PDF"、"EXCEL"、"JSON"
      * @return 报告生成结果，包含报告ID和下载链接
-     * @throws AuditServiceException 当报告生成失败时抛出
+     * @throws AuditException 当报告生成失败时抛出
      */
     AuditReportResult generateAuditReport(String reportType, Map<String, Object> reportParams,
-                                          String outputFormat) throws AuditServiceException;
+                                          String outputFormat) throws AuditException;
 
     /**
      * 获取审计统计信息
@@ -199,10 +199,10 @@ public interface AuditService {
      * @param timeRange      时间范围，如"LAST_7_DAYS"、"LAST_MONTH"
      * @param filters        过滤条件，用于细化统计范围
      * @return 统计结果，包含各种维度的统计数据
-     * @throws AuditServiceException 当统计计算失败时抛出
+     * @throws AuditException 当统计计算失败时抛出
      */
     AuditStatistics getAuditStatistics(String statisticsType, String timeRange,
-                                       Map<String, Object> filters) throws AuditServiceException;
+                                       Map<String, Object> filters) throws AuditException;
 
     /**
      * 数据保留策略管理
@@ -211,9 +211,9 @@ public interface AuditService {
      * 这个方法用于配置和执行数据保留策略，如自动归档、定期清理等。</p>
      *
      * @param retentionPolicy 保留策略配置，包含保留期限、归档规则等
-     * @throws AuditServiceException 当策略配置失败时抛出
+     * @throws AuditException 当策略配置失败时抛出
      */
-    void configureRetentionPolicy(RetentionPolicy retentionPolicy) throws AuditServiceException;
+    void configureRetentionPolicy(RetentionPolicy retentionPolicy) throws AuditException;
 
     /**
      * 验证审计数据完整性
@@ -224,9 +224,9 @@ public interface AuditService {
      * @param startTime 验证开始时间
      * @param endTime   验证结束时间
      * @return 完整性验证结果，包含验证状态和详细信息
-     * @throws AuditServiceException 当验证失败时抛出
+     * @throws AuditException 当验证失败时抛出
      */
-    IntegrityCheckResult verifyDataIntegrity(OffsetDateTime startTime, OffsetDateTime endTime) throws AuditServiceException;
+    IntegrityCheckResult verifyDataIntegrity(OffsetDateTime startTime, OffsetDateTime endTime) throws AuditException;
 
     // =================== 枚举和数据结构定义 ===================
 

@@ -2,7 +2,8 @@ package com.cloud.baseai.domain.kb.service;
 
 import com.cloud.baseai.domain.kb.repository.EmbeddingRepository;
 import com.cloud.baseai.domain.kb.repository.EmbeddingRepository.EmbeddingSearchResult;
-import com.cloud.baseai.infrastructure.exception.VectorProcessingException;
+import com.cloud.baseai.infrastructure.exception.BusinessException;
+import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.utils.KbUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,7 +113,12 @@ public class VectorSearchService {
 
         } catch (Exception e) {
             log.error("向量搜索失败: modelCode={}, tenantId={}", modelCode, tenantId, e);
-            throw new VectorProcessingException("向量搜索执行失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_021)
+                    .cause(e)
+                    .context("operation", "search")
+                    .context("modelCode", modelCode)
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -157,7 +163,12 @@ public class VectorSearchService {
 
         } catch (Exception e) {
             log.error("混合搜索失败: modelCode={}, tenantId={}", modelCode, tenantId, e);
-            throw new VectorProcessingException("混合搜索执行失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_023)
+                    .cause(e)
+                    .context("operation", "hybridSearch")
+                    .context("modelCode", modelCode)
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
@@ -201,7 +212,12 @@ public class VectorSearchService {
 
         } catch (Exception e) {
             log.error("查询扩展搜索失败: originalQuery={}", originalQuery, e);
-            throw new VectorProcessingException("查询扩展搜索失败", e);
+            throw BusinessException.builder(ErrorCode.BIZ_KB_034)
+                    .cause(e)
+                    .context("operation", "expandedSearch")
+                    .context("modelCode", modelCode)
+                    .context("tenantId", tenantId)
+                    .build();
         }
     }
 
