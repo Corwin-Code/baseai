@@ -20,24 +20,24 @@ import com.cloud.baseai.domain.chat.repository.ChatUsageRepository;
 import com.cloud.baseai.domain.chat.service.ChatProcessingService;
 import com.cloud.baseai.domain.chat.service.UsageCalculationService;
 import com.cloud.baseai.domain.user.service.UserInfoService;
-import com.cloud.baseai.infrastructure.config.ChatProperties;
+import com.cloud.baseai.infrastructure.config.properties.ChatProperties;
+import com.cloud.baseai.infrastructure.config.properties.KnowledgeBaseProperties;
+import com.cloud.baseai.infrastructure.config.properties.RateLimitProperties;
 import com.cloud.baseai.infrastructure.constants.ChatConstants;
 import com.cloud.baseai.infrastructure.exception.BusinessException;
 import com.cloud.baseai.infrastructure.exception.ChatException;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
-import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
+import com.cloud.baseai.infrastructure.external.llm.service.ChatCompletionService;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.OffsetDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -81,10 +81,9 @@ public class ChatApplicationService {
     private final FlowOrchestrationAppService flowService;
 
     // 配置
-    private final ChatProperties config;
-
-    // 异步执行器
-    private final ExecutorService asyncExecutor;
+    private final ChatProperties chatProps;
+    private final RateLimitProperties limitProps;
+    private final KnowledgeBaseProperties kbProps;
 
     // 可选服务
     @Autowired(required = false)
@@ -104,7 +103,7 @@ public class ChatApplicationService {
             KnowledgeBaseAppService kbService,
             McpApplicationService mcpService,
             FlowOrchestrationAppService flowService,
-            ChatProperties config) {
+            ChatProperties chatProps, RateLimitProperties limitProps, KnowledgeBaseProperties kbProps) {
 
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;
@@ -116,12 +115,9 @@ public class ChatApplicationService {
         this.kbService = kbService;
         this.mcpService = mcpService;
         this.flowService = flowService;
-        this.config = config;
-
-        this.asyncExecutor = Executors.newFixedThreadPool(
-                config.getPerformance() != null ?
-                        config.getPerformance().getAsyncPoolSize() : 10
-        );
+        this.chatProps = chatProps;
+        this.limitProps = limitProps;
+        this.kbProps = kbProps;
     }
 
     // =================== 对话线程管理 ===================
@@ -414,30 +410,28 @@ public class ChatApplicationService {
     }
 
     /**
-     * 流式发送消息
+     * 流式发送消息（异步执行流式处理）
      *
      * <p>流式处理提供了更流畅的用户体验。我们将生成过程分解为多个步骤，
      * 实时向用户推送进度和部分结果。</p>
      */
+    @Async("chatAsyncExecutor")
     public void sendMessageStream(Long threadId, SendMessageCommand cmd, SseEmitter emitter) {
         log.info("开始流式消息处理: threadId={}", threadId);
 
-        // 异步执行流式处理
-        CompletableFuture.runAsync(() -> {
+        try {
+            processMessageStream(threadId, cmd, emitter);
+        } catch (Exception e) {
+            log.error("流式消息处理失败: threadId={}", threadId, e);
             try {
-                processMessageStream(threadId, cmd, emitter);
-            } catch (Exception e) {
-                log.error("流式消息处理失败: threadId={}", threadId, e);
-                try {
-                    emitter.send(SseEmitter.event()
-                            .name("error")
-                            .data(Map.of("error", e.getMessage())));
-                    emitter.completeWithError(e);
-                } catch (Exception sendError) {
-                    log.error("发送错误事件失败", sendError);
-                }
+                emitter.send(SseEmitter.event()
+                        .name("error")
+                        .data(Map.of("error", e.getMessage())));
+                emitter.completeWithError(e);
+            } catch (Exception sendError) {
+                log.error("发送错误事件失败", sendError);
             }
-        }, asyncExecutor);
+        }
     }
 
     /**
@@ -820,8 +814,8 @@ public class ChatApplicationService {
             throw new ChatException(ErrorCode.BIZ_CHAT_016);
         }
 
-        if (content.length() > config.getMaxMessageLength()) {
-            throw new ChatException(ErrorCode.BIZ_CHAT_018, config.getMaxMessageLength());
+        if (content.length() > chatProps.getMessage().getMaxLength()) {
+            throw new ChatException(ErrorCode.BIZ_CHAT_018, chatProps.getMessage().getMaxLength());
         }
     }
 
@@ -830,11 +824,9 @@ public class ChatApplicationService {
      */
     private void checkRateLimit(Long tenantId, Long userId) {
         // 实现速率限制检查逻辑
-        if (config.isRateLimitEnabled()) {
-            int recentMessages = messageRepo.countRecentMessages(userId, config.getRateLimitWindow());
-            if (recentMessages >= config.getRateLimitMax()) {
-                throw new ChatException(ErrorCode.BIZ_CHAT_032);
-            }
+        int recentMessages = messageRepo.countRecentMessages(userId, 60);
+        if (recentMessages >= limitProps.getGlobal().getRequestsPerHour()) {
+            throw new ChatException(ErrorCode.BIZ_CHAT_032);
         }
     }
 
@@ -940,9 +932,9 @@ public class ChatApplicationService {
             var searchCmd = new VectorSearchCommand(
                     thread.tenantId(),
                     content,
-                    config.getDefaultEmbeddingModel(),
-                    config.getKnowledgeRetrievalTopK(),
-                    config.getKnowledgeRetrievalThreshold(),
+                    kbProps.getEmbedding().getDefaultModel(),
+                    kbProps.getSearch().getDefaultTopK(),
+                    kbProps.getSearch().getDefaultThreshold().floatValue(),
                     false
             );
 
@@ -953,7 +945,7 @@ public class ChatApplicationService {
                             null, // messageId 稍后设置
                             result.chunkId(),
                             result.score(),
-                            config.getDefaultEmbeddingModel()
+                            kbProps.getEmbedding().getDefaultModel()
                     ))
                     .collect(Collectors.toList());
 

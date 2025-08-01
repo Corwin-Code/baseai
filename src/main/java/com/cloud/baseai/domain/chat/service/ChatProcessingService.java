@@ -4,8 +4,8 @@ import com.cloud.baseai.domain.chat.model.ChatMessage;
 import com.cloud.baseai.domain.chat.model.ContentSafety;
 import com.cloud.baseai.domain.chat.model.ConversationQuality;
 import com.cloud.baseai.domain.chat.model.MessageRole;
-import com.cloud.baseai.infrastructure.config.ChatProperties;
-import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
+import com.cloud.baseai.infrastructure.config.properties.ChatProperties;
+import com.cloud.baseai.infrastructure.external.llm.service.ChatCompletionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -89,7 +89,7 @@ public class ChatProcessingService {
             }
 
             // 第二步：语义分析增强（如果有可用的LLM）
-            if (detectedTools.isEmpty() && config.isSemanticAnalysisEnabled()) {
+            if (detectedTools.isEmpty()) {
                 detectedTools.addAll(analyzeSemanticIntents(content));
             }
 

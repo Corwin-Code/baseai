@@ -1,70 +1,78 @@
-# 生产环境配置
+# =================== 生产环境专用配置 ===================
 spring:
   config:
     activate:
       on-profile: prod
 
+  # 生产环境数据库配置
   jpa:
-    open-in-view: false
+    show-sql: false
+    hibernate:
+      ddl-auto: validate
 
-  jmx:
-    enabled: false       # 生产环境关闭 JMX
+# 生产环境日志配置
+logging:
+  level:
+    root: WARN
+    com.cloud.baseai: INFO
+    org.springframework.web: WARN
+    org.springframework.scheduling: WARN  # 减少日志噪音
 
-  devtools:
-    restart:
-      enabled: false    # 彻底关闭自动重启
-
+# 生产环境特定配置
 baseai:
-  chat:
-    performance:
-      async-pool-size: 20
-      enable-caching: true
-  llm:
-    default-provider: openai
-    failover-enabled: true
-    openai:
-      enabled: true
-    claude:
-      enabled: true
-
-email:
-  async: true
-  retry:
-    max-attempts: 5
-  batch:
-    size: 100
-
-sms:
-  async: true
-  limit:
-    per-minute: 10
-    per-hour: 50
-    per-day: 500
-
-audit:
+  # 生产环境增加线程池大小
   async:
+    core-pool-size: 4
+    max-pool-size: 16
+    queue-capacity: 1000
+
+  # 生产环境启用更严格的安全策略
+  security:
+    password:
+      min-length: 12
+      require-uppercase: true
+      require-lowercase: true
+      require-numbers: true
+      require-special-chars: true
+      max-age-days: 60
+
+  # 生产环境启用缓存预热
+  cache:
+    application:
+      enable-cache-warming: true
+
+  scheduling:
     enabled: true
-  batch:
-    size: 200
-    timeout: 3000
-  elasticsearch:
-    enabled: true
-  integrity:
-    check:
+    pool:
+      # 生产环境使用更大的线程池以支持高并发
+      size: 25
+      allow-core-thread-timeout: true
+      keep-alive-seconds: 300  # 5分钟
+    thread:
+      name-prefix: "Prod-Scheduler-"
+    shutdown:
+      wait-for-tasks-to-complete: true
+      # 生产环境给更多时间完成任务
+      await-termination-seconds: 300  # 5分钟
+
+  # 生产环境启用完整的审计功能
+  audit:
+    elasticsearch:
+      enabled: true
+      enable-ilm: true
+    integrity:
+      enabled: true
+    reporting:
       enabled: true
 
+# 生产环境监控配置
 management:
   endpoints:
     web:
       exposure:
-        include: health,metrics
+        # 生产环境限制暴露的端点
+        include: health,metrics,info
   endpoint:
     health:
-      show-details: never
-
-logging:
-  level:
-    com.clinflash.baseai: INFO
-    org.springframework.web: WARN
-  file:
-    name: /var/log/baseai/chat.log
+      # 生产环境可能不希望暴露详细信息
+      show-details: when-authorized

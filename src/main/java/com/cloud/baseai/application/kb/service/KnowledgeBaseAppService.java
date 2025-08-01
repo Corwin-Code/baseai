@@ -8,13 +8,13 @@ import com.cloud.baseai.domain.kb.repository.*;
 import com.cloud.baseai.domain.kb.service.DocumentProcessingService;
 import com.cloud.baseai.domain.kb.service.VectorSearchService;
 import com.cloud.baseai.domain.user.service.UserInfoService;
-import com.cloud.baseai.infrastructure.config.KnowledgeBaseProperties;
+import com.cloud.baseai.infrastructure.config.properties.KnowledgeBaseProperties;
 import com.cloud.baseai.infrastructure.constants.KbConstants;
 import com.cloud.baseai.infrastructure.constants.SystemConstants;
 import com.cloud.baseai.infrastructure.exception.BusinessException;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.exception.KnowledgeBaseException;
-import com.cloud.baseai.infrastructure.external.llm.EmbeddingService;
+import com.cloud.baseai.infrastructure.external.llm.service.EmbeddingService;
 import com.cloud.baseai.infrastructure.utils.KbUtils;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -62,7 +62,7 @@ public class KnowledgeBaseAppService {
     private final EmbeddingService embeddingService;
 
     // 配置
-    private final KnowledgeBaseProperties config;
+    private final KnowledgeBaseProperties kbProps;
 
     // 异步执行器
     private final ExecutorService asyncExecutor;
@@ -84,7 +84,7 @@ public class KnowledgeBaseAppService {
             DocumentProcessingService docService,
             VectorSearchService vectorService,
             EmbeddingService embeddingService,
-            KnowledgeBaseProperties config) {
+            KnowledgeBaseProperties kbProps) {
 
         this.documentRepo = documentRepo;
         this.chunkRepo = chunkRepo;
@@ -94,12 +94,12 @@ public class KnowledgeBaseAppService {
         this.docService = docService;
         this.vectorService = vectorService;
         this.embeddingService = embeddingService;
-        this.config = config;
+        this.kbProps = kbProps;
 
         // 创建异步执行器
         this.asyncExecutor = Executors.newFixedThreadPool(
-                config.getPerformance() != null ?
-                        config.getPerformance().getAsyncPoolSize() : 10
+                kbProps.getPerformance() != null ?
+                        kbProps.getPerformance().getAsyncPoolSize() : 10
         );
     }
 
@@ -168,7 +168,7 @@ public class KnowledgeBaseAppService {
                 scheduleAsyncVectorGeneration(document.id(), chunks, cmd.operatorId());
                 log.info("已安排异步向量生成: documentId={}", document.id());
             } else {
-                generateEmbeddingsSync(chunks, config.getVector().getDefaultModel(), cmd.operatorId());
+                generateEmbeddingsSync(chunks, kbProps.getEmbedding().getDefaultModel(), cmd.operatorId());
                 log.info("同步向量生成完成: documentId={}", document.id());
             }
 
@@ -234,7 +234,7 @@ public class KnowledgeBaseAppService {
 
             // 获取可用的模型列表
             List<String> availableModels = Arrays.asList(
-                    config.getVector().getDefaultModel()
+                    kbProps.getEmbedding().getDefaultModel()
             );
 
             // 根据分块数量确定文档大小类别
@@ -500,7 +500,7 @@ public class KnowledgeBaseAppService {
             }
 
             boolean hasEmbedding = embeddingRepo
-                    .findByChunkIdAndModel(chunkId, config.getVector().getDefaultModel())
+                    .findByChunkIdAndModel(chunkId, kbProps.getEmbedding().getDefaultModel())
                     .isPresent();
 
             return new ChunkDetailDTO(
@@ -788,7 +788,7 @@ public class KnowledgeBaseAppService {
                     .sum();
 
             // 统计向量数量
-            long totalEmbeddings = embeddingRepo.countByModel(config.getVector().getDefaultModel());
+            long totalEmbeddings = embeddingRepo.countByModel(kbProps.getEmbedding().getDefaultModel());
 
             // 统计标签数量
             long totalTags = tagRepo.count();
@@ -809,7 +809,7 @@ public class KnowledgeBaseAppService {
 
             // 按模型统计向量（简化实现）
             Map<String, Integer> embeddingsByModel = Map.of(
-                    config.getVector().getDefaultModel(), (int) totalEmbeddings
+                    kbProps.getEmbedding().getDefaultModel(), (int) totalEmbeddings
             );
 
             return new KbStatisticsDTO(
@@ -865,7 +865,7 @@ public class KnowledgeBaseAppService {
 
             // 检查嵌入服务
             try {
-                boolean available = embeddingService.isModelAvailable(config.getVector().getDefaultModel());
+                boolean available = embeddingService.isModelAvailable(kbProps.getEmbedding().getDefaultModel());
                 components.put("embedding_service", available ? healthyStatus : unhealthyStatus + ": " + " model not available");
             } catch (Exception e) {
                 components.put("embedding_service", unhealthyStatus + ": " + e.getMessage());
@@ -967,10 +967,10 @@ public class KnowledgeBaseAppService {
     // =================== 私有辅助方法 ===================
 
     private void validateUploadCommand(UploadDocumentCommand cmd) {
-        if (!cmd.isContentSizeValid((int) config.getDocument().getMaxSizeBytes())) {
+        if (!cmd.isContentSizeValid(Math.toIntExact(kbProps.getDocument().getMaxSizeBytes()))) {
             throw KnowledgeBaseException.fileSizeExceeded(
                     cmd.content().getBytes().length,
-                    config.getDocument().getMaxSizeBytes() / (1024 * 1024)
+                    kbProps.getDocument().getMaxSizeBytes() / (1024 * 1024)
             );
         }
 
@@ -985,11 +985,11 @@ public class KnowledgeBaseAppService {
     }
 
     private void validateBatchUploadCommand(BatchUploadDocumentsCommand cmd) {
-        if (cmd.documents().size() > config.getDocument().getMaxBatchSize()) {
-            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_008, config.getDocument().getMaxBatchSize());
+        if (cmd.documents().size() > kbProps.getDocument().getMaxBatchSize()) {
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_008, kbProps.getDocument().getMaxBatchSize());
         }
 
-        if (!cmd.isBatchSizeValid(config.getDocument().getMaxSizeBytes() * 10)) {
+        if (!cmd.isBatchSizeValid(kbProps.getDocument().getMaxSizeBytes() * 10)) {
             throw new KnowledgeBaseException(ErrorCode.BIZ_KB_009);
         }
     }
@@ -999,8 +999,8 @@ public class KnowledgeBaseAppService {
             throw new KnowledgeBaseException(ErrorCode.BIZ_KB_013);
         }
 
-        if (cmd.topK() > config.getSearch().getMaxTopK()) {
-            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_014, config.getSearch().getMaxTopK());
+        if (cmd.topK() > kbProps.getSearch().getMaxTopK()) {
+            throw new KnowledgeBaseException(ErrorCode.BIZ_KB_014, kbProps.getSearch().getMaxTopK());
         }
     }
 
@@ -1011,7 +1011,7 @@ public class KnowledgeBaseAppService {
     private void scheduleAsyncVectorGeneration(Long documentId, List<Chunk> chunks, Long userId) {
         CompletableFuture.runAsync(() -> {
             try {
-                generateEmbeddingsSync(chunks, config.getVector().getDefaultModel(), userId);
+                generateEmbeddingsSync(chunks, kbProps.getEmbedding().getDefaultModel(), userId);
                 log.info("异步向量生成完成: documentId={}", documentId);
             } catch (Exception e) {
                 log.error("异步向量生成失败: documentId={}", documentId, e);
@@ -1047,7 +1047,7 @@ public class KnowledgeBaseAppService {
         int successCount = 0;
         int failureCount = 0;
         List<String> errors = new ArrayList<>();
-        int batchSize = config.getVector().getBatchSize();
+        int batchSize = kbProps.getEmbedding().getBatchSize();
 
         for (int i = 0; i < chunks.size(); i += batchSize) {
             int end = Math.min(i + batchSize, chunks.size());
@@ -1137,8 +1137,8 @@ public class KnowledgeBaseAppService {
                     List<String> highlights = KbUtils.generateHighlights(
                             chunk.text(),
                             Arrays.asList(query.split("\\s+")),
-                            config.getSearch().getMaxHighlights(),
-                            config.getSearch().getHighlightLength()
+                            kbProps.getSearch().getHighlight().getMaxHighlights(),
+                            kbProps.getSearch().getHighlight().getHighlightLength()
                     );
 
                     // 关联标签名称
@@ -1299,8 +1299,8 @@ public class KnowledgeBaseAppService {
     }
 
     private boolean isSupportedMimeType(String mimeType) {
-        String[] supported = config.getDocument().getSupportedMimeTypes();
-        return Arrays.asList(supported).contains(mimeType);
+        List<String> supported = kbProps.getDocument().getSupportedMimeTypes();
+        return supported.contains(mimeType);
     }
 
     private void recordMetrics(String operation, long startTime, boolean success) {

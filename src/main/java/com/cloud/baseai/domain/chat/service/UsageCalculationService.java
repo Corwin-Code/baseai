@@ -3,7 +3,7 @@ package com.cloud.baseai.domain.chat.service;
 import com.cloud.baseai.application.chat.dto.UsageStatisticsDTO;
 import com.cloud.baseai.domain.chat.model.ChatUsageDaily;
 import com.cloud.baseai.domain.chat.repository.ChatUsageRepository;
-import com.cloud.baseai.infrastructure.config.ChatProperties;
+import com.cloud.baseai.infrastructure.config.properties.ChatProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -220,6 +220,6 @@ public class UsageCalculationService {
     /**
      * 模型计费标准
      */
-    private record ModelPricing(double inputPrice, double outputPrice) {
+    public record ModelPricing(double inputPrice, double outputPrice) {
     }
 }

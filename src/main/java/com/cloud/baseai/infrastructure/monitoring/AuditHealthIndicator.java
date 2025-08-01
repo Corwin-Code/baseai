@@ -1,7 +1,7 @@
 package com.cloud.baseai.infrastructure.monitoring;
 
 import com.cloud.baseai.domain.audit.repository.SysAuditLogRepository;
-import com.cloud.baseai.infrastructure.config.AuditProperties;
+import com.cloud.baseai.infrastructure.config.properties.AuditProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.health.Health;
@@ -264,12 +264,12 @@ public class AuditHealthIndicator implements HealthIndicator {
             boolean configHealthy = true;
 
             // 检查异步处理配置
-            if (auditConfig.getAsync().isEnabled()) {
+            if (auditConfig.getLogging().getEnableAsync()) {
                 details.put("config.asyncEnabled", true);
-                details.put("config.batchSize", auditConfig.getAsync().getBatchSize());
+                details.put("config.batchSize", auditConfig.getLogging().getBatchSize());
 
                 // 检查批处理大小是否合理
-                if (auditConfig.getAsync().getBatchSize() > 1000) {
+                if (auditConfig.getLogging().getBatchSize() > 1000) {
                     details.put("config.warning", "批处理大小过大，可能影响内存使用");
                     configHealthy = false;
                 }
@@ -279,7 +279,7 @@ public class AuditHealthIndicator implements HealthIndicator {
             }
 
             // 检查数据保留配置
-            int retentionDays = auditConfig.getRetention().getDefaultRetentionDays();
+            int retentionDays = auditConfig.getRetention().getDefaultDays();
             details.put("config.retentionDays", retentionDays);
 
             if (retentionDays < 365) {

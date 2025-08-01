@@ -8,7 +8,6 @@ import com.cloud.baseai.domain.flow.repository.*;
 import com.cloud.baseai.domain.flow.service.FlowBuildService;
 import com.cloud.baseai.domain.flow.service.FlowExecutionService;
 import com.cloud.baseai.domain.user.service.UserInfoService;
-import com.cloud.baseai.infrastructure.config.FlowProperties;
 import com.cloud.baseai.infrastructure.exception.BusinessException;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.exception.FlowOrchestrationException;
@@ -16,15 +15,13 @@ import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -61,12 +58,6 @@ public class FlowOrchestrationAppService {
     private final FlowBuildService buildService;
     private final FlowExecutionService executionService;
 
-    // 配置
-    private final FlowProperties config;
-
-    // 异步执行器
-    private final ExecutorService asyncExecutor;
-
     // 可选服务
     @Autowired(required = false)
     private UserInfoService userInfoService;
@@ -83,8 +74,7 @@ public class FlowOrchestrationAppService {
             FlowRunRepository runRepo,
             FlowRunLogRepository runLogRepo,
             FlowBuildService buildService,
-            FlowExecutionService executionService,
-            FlowProperties config) {
+            FlowExecutionService executionService) {
 
         this.projectRepo = projectRepo;
         this.definitionRepo = definitionRepo;
@@ -95,13 +85,6 @@ public class FlowOrchestrationAppService {
         this.runLogRepo = runLogRepo;
         this.buildService = buildService;
         this.executionService = executionService;
-        this.config = config;
-
-        // 创建异步执行器
-        this.asyncExecutor = Executors.newFixedThreadPool(
-                config.getExecution() != null ?
-                        config.getExecution().getAsyncPoolSize() : 10
-        );
     }
 
     // =================== 项目管理接口实现 ===================
@@ -903,17 +886,6 @@ public class FlowOrchestrationAppService {
                 components.put("build_service", "unhealthy: " + e.getMessage());
             }
 
-            // 检查异步执行器
-            try {
-                if (!asyncExecutor.isShutdown()) {
-                    components.put("async_executor", "healthy");
-                } else {
-                    components.put("async_executor", "unhealthy: executor is shutdown");
-                }
-            } catch (Exception e) {
-                components.put("async_executor", "unhealthy: " + e.getMessage());
-            }
-
             boolean allHealthy = components.values().stream()
                     .allMatch(status -> status.equals("healthy"));
 
@@ -939,18 +911,17 @@ public class FlowOrchestrationAppService {
     /**
      * 异步执行流程
      */
-    private void scheduleAsyncExecution(FlowRun run, FlowSnapshot snapshot,
-                                        Map<String, Object> inputData, Integer timeoutMinutes) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                executeSynchronously(run, snapshot, inputData, timeoutMinutes);
-            } catch (Exception e) {
-                log.error("异步执行失败: runId={}", run.id(), e);
-                // 标记运行失败
-                FlowRun failedRun = run.fail("{\"error\":\"异步执行失败\",\"message\":\"" + e.getMessage() + "\"}");
-                runRepo.save(failedRun);
-            }
-        }, asyncExecutor);
+    @Async("flowAsyncExecutor")
+    protected void scheduleAsyncExecution(FlowRun run, FlowSnapshot snapshot,
+                                          Map<String, Object> inputData, Integer timeoutMinutes) {
+        try {
+            executeSynchronously(run, snapshot, inputData, timeoutMinutes);
+        } catch (Exception e) {
+            log.error("异步执行失败: runId={}", run.id(), e);
+            // 标记运行失败
+            FlowRun failedRun = run.fail("{\"error\":\"异步执行失败\",\"message\":\"" + e.getMessage() + "\"}");
+            runRepo.save(failedRun);
+        }
     }
 
     /**

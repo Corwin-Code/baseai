@@ -4,30 +4,50 @@ spring:
     activate:
       on-profile: dev
 
-baseai:
-  llm:
-    mock:
-      enabled: true
-    openai:
-      enabled: false
-    claude:
-      enabled: false
+  # 开发环境数据库配置
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
 
-email:
-  async: false
-
-sms:
-  provider: mock
-  async: false
-
-audit:
-  elasticsearch:
-    enabled: false
-  integrity:
-    check:
-      enabled: false
-
+# 开发环境日志配置
 logging:
   level:
-    com.clinflash.baseai: DEBUG
-    org.hibernate.SQL: DEBUG
+    com.cloud.baseai: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.scheduling: DEBUG
+
+# 开发环境特定配置
+baseai:
+  # 开发环境使用代理API
+  llm:
+    openai:
+      base-url: https://api.openai-hk.com/v1
+
+  # 开发环境降低安全要求
+  security:
+    password:
+      min-length: 6
+      require-uppercase: false
+      require-special-chars: false
+
+  # 开发环境使用较小的限制值便于测试
+  rate-limit:
+    global:
+      requests-per-minute: 1000
+      requests-per-hour: 10000
+
+  scheduling:
+    enabled: true
+    pool:
+      # 开发环境使用较小的线程池，加快启动速度
+      size: 5
+    thread:
+      name-prefix: "Dev-Scheduler-"
+    shutdown:
+      # 开发环境可以快速关闭，不等待任务完成
+      wait-for-tasks-to-complete: false
+      await-termination-seconds: 10
+    monitoring:
+      enabled: true

@@ -3,6 +3,7 @@ package com.cloud.baseai.domain.audit.service;
 import com.cloud.baseai.application.audit.dto.*;
 import com.cloud.baseai.domain.audit.model.SysAuditLog;
 import com.cloud.baseai.domain.audit.repository.SysAuditLogRepository;
+import com.cloud.baseai.infrastructure.config.properties.AuditProperties;
 import com.cloud.baseai.infrastructure.exception.AuditException;
 import com.cloud.baseai.infrastructure.exception.BusinessException;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
@@ -76,6 +77,7 @@ public class AuditServiceImpl implements AuditService {
     private final ScheduledExecutorService scheduledExecutor;
 
     // 配置参数
+    private final AuditProperties auditProperties;
     @Value("${audit.async.enabled:true}")
     private boolean asyncEnabled;
 
@@ -104,13 +106,15 @@ public class AuditServiceImpl implements AuditService {
      * <p>在构造函数中，我们建立了一个完整的异步处理体系。这就像建设一个
      * 现代化的工厂生产线，每个环节都经过精心设计，确保高效、可靠的运行。</p>
      */
-    public AuditServiceImpl(SysAuditLogRepository auditLogRepository, ElasticsearchOperations elasticsearchOps, ObjectMapper objectMapper) {
+    public AuditServiceImpl(SysAuditLogRepository auditLogRepository, ElasticsearchOperations elasticsearchOps, ObjectMapper objectMapper, AuditProperties auditProperties) {
+
         Assert.notNull(auditLogRepository, "审计日志仓储不能为null");
         Assert.notNull(objectMapper, "JSON映射器不能为null");
 
         this.auditLogRepository = auditLogRepository;
         this.objectMapper = objectMapper;
         this.elasticsearchOps = elasticsearchOps;
+        this.auditProperties = auditProperties;
 
         // 创建专门的审计处理线程池
         this.auditExecutor = Executors.newFixedThreadPool(

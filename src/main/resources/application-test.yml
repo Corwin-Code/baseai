@@ -1,49 +1,33 @@
-# 测试环境配置
+# =================== 测试环境专用配置 ===================
 spring:
   config:
     activate:
       on-profile: test
 
+# 测试环境日志配置
+logging:
+  level:
+    root: WARN
+    com.cloud.baseai: INFO
+
+# 测试环境特定配置
 baseai:
-  chat:
-    rate-limit-enabled: false
+  # 测试环境启用模拟服务
   llm:
+    openai:
+      enabled: false
     mock:
       enabled: true
-      simulate-errors: true
-      error-rate: 0.05
+      simulated-delay: PT0.5S
+      simulate-errors: false
+      error-rate: 0.1
 
-email:
-  async: true
-  retry:
-    max-attempts: 5
-  batch:
-    size: 100
-
-sms:
-  async: true
-  limit:
-    per-minute: 10
-    per-hour: 50
-    per-day: 500
-
-audit:
-  async:
+  scheduling:
     enabled: true
-  batch:
-    size: 200
-    timeout: 3000
-  elasticsearch:
-    enabled: true
-  integrity:
-    check:
-      enabled: true
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,metrics
-  endpoint:
-    health:
-      show-details: never
+    pool:
+      size: 8
+    thread:
+      name-prefix: "Test-Scheduler-"
+    shutdown:
+      wait-for-tasks-to-complete: true
+      await-termination-seconds: 30

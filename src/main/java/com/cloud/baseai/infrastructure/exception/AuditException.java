@@ -121,10 +121,6 @@ public class AuditException extends BusinessException {
         this(errorCode, ErrorType.BUSINESS_ERROR, ErrorSeverity.MEDIUM, false, null);
     }
 
-    public AuditException(ErrorCode errorCode, Object... args) {
-        this(errorCode, ErrorType.BUSINESS_ERROR, ErrorSeverity.MEDIUM, false, null, args);
-    }
-
     /**
      * 构造函数 - 创建一个带有原因的审计服务异常
      *
@@ -133,10 +129,6 @@ public class AuditException extends BusinessException {
      */
     public AuditException(ErrorCode errorCode, Throwable cause) {
         this(errorCode, ErrorType.TECHNICAL_ERROR, ErrorSeverity.MEDIUM, isRetryable(cause), cause);
-    }
-
-    public AuditException(ErrorCode errorCode, Throwable cause, Object... args) {
-        this(errorCode, ErrorType.TECHNICAL_ERROR, ErrorSeverity.MEDIUM, isRetryable(cause), cause, args);
     }
 
     /**
@@ -316,7 +308,7 @@ public class AuditException extends BusinessException {
 
     public static AuditException generatorNotFound(String reportType) {
         return (AuditException) new AuditException(ErrorCode.BIZ_AUDIT_014, ErrorType.CONFIGURATION_ERROR,
-                ErrorSeverity.HIGH, false, null, reportType)
+                ErrorSeverity.HIGH, false, null)
                 .addContext("reportType", reportType);
     }
 

@@ -3,7 +3,8 @@ package com.cloud.baseai.infrastructure.monitoring;
 import com.cloud.baseai.domain.chat.repository.ChatMessageRepository;
 import com.cloud.baseai.domain.chat.repository.ChatThreadRepository;
 import com.cloud.baseai.domain.chat.repository.ChatUsageRepository;
-import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
+import com.cloud.baseai.infrastructure.external.llm.factory.ChatModelFactory;
+import com.cloud.baseai.infrastructure.external.llm.service.ChatCompletionService;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,7 +47,7 @@ public class ChatHealthIndicator implements HealthIndicator {
 
     private static final Logger log = LoggerFactory.getLogger(ChatHealthIndicator.class);
 
-    private final ChatCompletionService chatCompletionService;
+    private final ChatModelFactory chatModelFactory;
     private final ChatThreadRepository threadRepository;
     private final ChatMessageRepository messageRepository;
     private final ChatUsageRepository usageRepository;
@@ -57,12 +58,12 @@ public class ChatHealthIndicator implements HealthIndicator {
     private static final long DATABASE_TIMEOUT_MS = 3000;
 
     public ChatHealthIndicator(
-            ChatCompletionService chatCompletionService,
+            ChatModelFactory chatModelFactory,
             ChatThreadRepository threadRepository,
             ChatMessageRepository messageRepository,
             ChatUsageRepository usageRepository) {
 
-        this.chatCompletionService = chatCompletionService;
+        this.chatModelFactory = chatModelFactory;
         this.threadRepository = threadRepository;
         this.messageRepository = messageRepository;
         this.usageRepository = usageRepository;
@@ -129,7 +130,8 @@ public class ChatHealthIndicator implements HealthIndicator {
             // 使用CompletableFuture实现超时控制
             CompletableFuture<Boolean> healthCheck = CompletableFuture.supplyAsync(() -> {
                 try {
-                    return chatCompletionService.isHealthy();
+                    ChatCompletionService service = chatModelFactory.getDefaultService();
+                    return service.isHealthy();
                 } catch (Exception e) {
                     log.warn("LLM服务健康检查异常", e);
                     return false;
@@ -142,7 +144,7 @@ public class ChatHealthIndicator implements HealthIndicator {
             if (isHealthy && responseTime <= MAX_RESPONSE_TIME_MS) {
                 return HealthCheckResult.healthy("LLM服务正常")
                         .withDetail("response_time_ms", responseTime)
-                        .withDetail("supported_models", chatCompletionService.getSupportedModels().size());
+                        .withDetail("supported_models", chatModelFactory.getAllSupportedModels().size());
             } else {
                 String reason = !isHealthy ? "LLM服务不可用" : "响应时间过长: " + responseTime + "ms";
                 return HealthCheckResult.unhealthy(reason)

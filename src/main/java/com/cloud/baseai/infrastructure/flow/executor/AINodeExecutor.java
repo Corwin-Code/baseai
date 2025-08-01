@@ -4,9 +4,11 @@ import com.cloud.baseai.application.kb.command.VectorSearchCommand;
 import com.cloud.baseai.application.kb.dto.SearchResultDTO;
 import com.cloud.baseai.application.kb.service.KnowledgeBaseAppService;
 import com.cloud.baseai.domain.flow.model.NodeTypes;
-import com.cloud.baseai.infrastructure.config.KnowledgeBaseProperties;
-import com.cloud.baseai.infrastructure.external.llm.ChatCompletionService;
-import com.cloud.baseai.infrastructure.external.llm.EmbeddingService;
+import com.cloud.baseai.infrastructure.config.properties.KnowledgeBaseProperties;
+import com.cloud.baseai.infrastructure.external.llm.factory.ChatModelFactory;
+import com.cloud.baseai.infrastructure.external.llm.model.ChatCompletionResult;
+import com.cloud.baseai.infrastructure.external.llm.service.ChatCompletionService;
+import com.cloud.baseai.infrastructure.external.llm.service.EmbeddingService;
 import com.cloud.baseai.infrastructure.flow.model.FlowExecutionContext;
 import com.cloud.baseai.infrastructure.flow.model.NodeExecutionInfo;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -41,7 +43,7 @@ public class AINodeExecutor implements NodeExecutor {
     private static final Logger log = LoggerFactory.getLogger(AINodeExecutor.class);
 
     private final ObjectMapper objectMapper;
-    private final ChatCompletionService chatService;
+    private final ChatModelFactory chatModelFactory;
     private final EmbeddingService embeddingService;
     private final KnowledgeBaseProperties config;
 
@@ -49,10 +51,11 @@ public class AINodeExecutor implements NodeExecutor {
     private KnowledgeBaseAppService kbService;
 
     public AINodeExecutor(ObjectMapper objectMapper,
-                          ChatCompletionService chatService,
-                          EmbeddingService embeddingService, KnowledgeBaseProperties config) {
+                          ChatModelFactory chatModelFactory,
+                          EmbeddingService embeddingService,
+                          KnowledgeBaseProperties config) {
         this.objectMapper = objectMapper;
-        this.chatService = chatService;
+        this.chatModelFactory = chatModelFactory;
         this.embeddingService = embeddingService;
         this.config = config;
     }
@@ -104,7 +107,8 @@ public class AINodeExecutor implements NodeExecutor {
             Map<String, Object> llmContext = prepareLLMContext(model, actualPrompt, temperature, maxTokens, input);
 
             // 调用LLM服务
-            ChatCompletionService.ChatCompletionResult result = chatService.generateCompletion(llmContext);
+            ChatCompletionService service = chatModelFactory.getServiceForModel(model);
+            ChatCompletionResult result = service.generateCompletion(llmContext);
 
             // 构建输出
             Map<String, Object> output = new HashMap<>(input);
@@ -247,7 +251,8 @@ public class AINodeExecutor implements NodeExecutor {
             );
 
             // 调用LLM服务
-            ChatCompletionService.ChatCompletionResult result = chatService.generateCompletion(llmContext);
+            ChatCompletionService service = chatModelFactory.getServiceForModel(model);
+            ChatCompletionResult result = service.generateCompletion(llmContext);
 
             Map<String, Object> output = new HashMap<>(input);
             output.put("message", message);
@@ -302,7 +307,8 @@ public class AINodeExecutor implements NodeExecutor {
             );
 
             // 调用LLM服务
-            ChatCompletionService.ChatCompletionResult result = chatService.generateCompletion(llmContext);
+            ChatCompletionService service = chatModelFactory.getServiceForModel(model);
+            ChatCompletionResult result = service.generateCompletion(llmContext);
 
             Map<String, Object> output = new HashMap<>(input);
             output.put("text", text);
@@ -339,8 +345,9 @@ public class AINodeExecutor implements NodeExecutor {
     @Override
     public boolean isHealthy() {
         try {
-            return chatService.isHealthy() && embeddingService.isModelAvailable(
-                    config.getVector().getDefaultModel());
+            ChatCompletionService service = chatModelFactory.getDefaultService();
+            return service.isHealthy() && embeddingService.isModelAvailable(
+                    config.getEmbedding().getDefaultModel());
         } catch (Exception e) {
             log.warn("AI节点执行器健康检查失败", e);
             return false;

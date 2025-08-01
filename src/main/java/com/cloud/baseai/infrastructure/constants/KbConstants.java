@@ -17,14 +17,15 @@ public final class KbConstants {
      * 支持的文档来源类型
      */
     public static final class SourceTypes {
-        public static final String PDF = "PDF";
-        public static final String WORD = "WORD";
-        public static final String MARKDOWN = "MARKDOWN";
-        public static final String TEXT = "TEXT";
-        public static final String URL = "URL";
-        public static final String HTML = "HTML";
-        public static final String CSV = "CSV";
-        public static final String JSON = "JSON";
+        public static final String PDF = "pdf";
+        public static final String WORD = "doc";
+        public static final String WORDX = "docx";
+        public static final String MARKDOWN = "md";
+        public static final String TEXT = "txt";
+        public static final String RTF = "rtf";
+        public static final String HTML = "html";
+        public static final String CSV = "csv";
+        public static final String JSON = "json";
     }
 
     /**

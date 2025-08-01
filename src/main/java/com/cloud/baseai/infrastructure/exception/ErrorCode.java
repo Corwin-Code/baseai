@@ -427,10 +427,10 @@ public enum ErrorCode {
 
     // AI模型错误 (AI)
     EXT_AI_001("EXT_AI_001", "AI模型服务不可用"),
-    EXT_AI_002("EXT_AI_002", "AI模型调用失败"),
+    EXT_AI_002("EXT_AI_002", "模型服务未初始化: "),
     EXT_AI_003("EXT_AI_003", "AI模型响应超时"),
     EXT_AI_004("EXT_AI_004", "AI模型配额不足"),
-    EXT_AI_005("EXT_AI_005", "不支持的OpenAI模型: "),
+    EXT_AI_005("EXT_AI_005", "不支持的模型: "),
     EXT_AI_006("EXT_AI_006", "文本过长，估算Token数: %d，模型限制: %d"),
     EXT_AI_007("EXT_AI_007", "API请求频率过高，请稍后重试"),
 
@@ -445,7 +445,7 @@ public enum ErrorCode {
 
     EXT_AI_015("EXT_AI_015", "Claude返回空响应"),
     EXT_AI_016("EXT_AI_016", "Claude API调用失败: "),
-    EXT_AI_017("EXT_AI_017", "生成Claude聊天完成时发生错误"),
+    EXT_AI_017("EXT_AI_017", "Claude生成聊天完成时发生错误"),
     EXT_AI_018("EXT_AI_018", "Claude流式生成失败"),
     EXT_AI_019("EXT_AI_019", "Claude流式处理被中断"),
 
@@ -453,6 +453,9 @@ public enum ErrorCode {
     EXT_AI_021("EXT_AI_021", "OpenAI流式响应处理失败"),
     EXT_AI_022("EXT_AI_022", "OpenAI启动流式生成失败"),
     EXT_AI_023("EXT_AI_023", "OpenAI流式处理被中断"),
+
+    EXT_AI_024("EXT_AI_024", "没有可用的聊天服务"),
+    EXT_AI_025("EXT_AI_025","所有模型调用失败: "),
 
     // 第三方API错误 (API)
     EXT_API_001("EXT_API_001", "第三方API调用失败"),

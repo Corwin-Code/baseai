@@ -123,7 +123,7 @@ public class AuditEventPublisher implements ApplicationEventPublisherAware {
             } catch (Exception e) {
                 log.error("发布用户操作审计事件失败: action={}", action, e);
                 recordPublishError();
-                throw new AuditException(ErrorCode.BIZ_AUDIT_031, e.getMessage(), e);
+                throw new AuditException(ErrorCode.BIZ_AUDIT_031, e);
             }
         });
     }
@@ -188,7 +188,7 @@ public class AuditEventPublisher implements ApplicationEventPublisherAware {
             } catch (Exception e) {
                 log.error("发布安全审计事件失败: eventType={}", eventType, e);
                 recordPublishError();
-                throw new AuditException(ErrorCode.BIZ_AUDIT_032, e.getMessage(), e);
+                throw new AuditException(ErrorCode.BIZ_AUDIT_032, e);
             }
         });
     }
@@ -304,7 +304,7 @@ public class AuditEventPublisher implements ApplicationEventPublisherAware {
             } catch (Exception e) {
                 log.error("发布数据变更审计事件失败: operationType={}", operationType, e);
                 recordPublishError();
-                throw new AuditException(ErrorCode.BIZ_AUDIT_033, e.getMessage(), e);
+                throw new AuditException(ErrorCode.BIZ_AUDIT_033, e);
             }
         });
     }

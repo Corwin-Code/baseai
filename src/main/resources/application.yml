@@ -1,61 +1,127 @@
-# =================== Spring Configuration ===================
+# ==================================================================================
+# BaseAI 应用配置文件 - 基于Spring Boot的AI平台核心配置文件
+# ==================================================================================
+
+# =================== 应用基础配置 ===================
 spring:
   application:
-    name: baseai                  # 应用名称
-
+    name: baseai
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   main:
-    lazy-initialization: true    # 延迟加载 Bean，提升启动速度
-  devtools:
-    add-properties: false        # 关闭 DevTools 自动注入属性（仅在引入 DevTools 时生效）
-  jmx:
-    enabled: true                # 关闭 Spring JMX 支持
+    lazy-initialization: true
+    allow-bean-definition-overriding: false
 
-  # ========== 数据源配置 ==========
+  # =================== 数据库配置 ===================
   datasource:
-    driver-class-name: org.postgresql.Driver   # JDBC 驱动
+    driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://${DB_HOST:172.18.20.209}:${DB_PORT:5432}/${DB_DATABASE:baseai}
-    username: ${DB_USERNAME:username}          # 可通过环境变量覆盖
-    password: ${DB_PASSWORD:password}          # 可通过环境变量覆盖
+    username: ${DB_USERNAME:username}
+    password: ${DB_PASSWORD:password}
 
-    # 以下是 HikariCP（Spring Boot 默认连接池）参数
+    # HikariCP 连接池配置
     hikari:
-      minimum-idle: 5     # 池中最小空闲连接数
-      maximum-pool-size: 20  # 最大连接数
-      idle-timeout: 300000   # 空闲超时（ms）
-      max-lifetime: 1800000  # 连接最大生命周期（ms）
-      connection-timeout: 30000  # 获取连接超时（ms）
-      pool-name: BaseAiCloudHikariCP
+      pool-name: BaseAI-HikariCP
+      # 最小空闲连接数，保证基本的并发处理能力
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      # 最大连接数，避免数据库连接过多
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      # 空闲连接的最大生存时间（毫秒），防止连接长时间占用
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT:300000}
+      # 连接的最大生存时间（毫秒），防止连接老化
+      max-lifetime: ${DB_POOL_MAX_LIFETIME:1800000}
+      # 获取连接的超时时间（毫秒），避免长时间等待
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT:30000}
+      # 连接泄漏检测阈值，帮助发现代码中的连接泄漏问题
+      leak-detection-threshold: 60000
 
-  # ========== JPA / Hibernate 配置（如使用 Spring Data JPA） ==========
+  # =================== JPA/Hibernate 配置 ===================
   jpa:
-    open-in-view: false           # 关闭 Open‑In‑View，避免视图渲染时触发懒加载
+    # 关闭 Open-In-View，避免懒加载问题
+    open-in-view: false
+    # 是否在控制台打印 SQL
+    show-sql: ${JPA_SHOW_SQL:false}
     hibernate:
-      ddl-auto: validate          # validate(生产) | update(开发) | create | create-drop，根据环境选择
-    show-sql: false               # 是否在控制台打印 SQL
+      # 生产环境使用 validate，开发环境可以使用 update
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+      # 使用下划线命名策略，符合数据库命名规范
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
     properties:
       hibernate:
-        format_sql: true          # 格式化 SQL
-        use_sql_comments: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        use_sql_comments: false
+        # 批量操作优化
+        jdbc:
+          batch_size: 25
+          order_inserts: true
+          order_updates: true
+          # 二级缓存配置
+        cache:
+          use_second_level_cache: false
 
-  # ========== Redis配置（用于缓存和会话） ==========
+  # =================== Redis 缓存配置 ===================
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
-      timeout: 2000ms
-      jedis:
-        pool:
-          max-active: 10
-          max-idle: 8
-          min-idle: 2
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:5000ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:3000ms}
 
-  # ========== Mail邮件服务配置 ==========
+      # Lettuce 连接池配置（推荐使用 Lettuce 而不是 Jedis）
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+          max-idle: ${REDIS_POOL_MAX_IDLE:8}
+          min-idle: ${REDIS_POOL_MIN_IDLE:0}
+          max-wait: ${REDIS_POOL_MAX_WAIT:5000ms}
+
+  # Spring Cache 配置
+  cache:
+    type: redis
+    redis:
+      # 默认缓存过期时间（30分钟）
+      time-to-live: ${CACHE_DEFAULT_TTL:1800000}
+      cache-null-values: false
+      use-key-prefix: true
+      key-prefix: "baseai:"
+
+  # ========== 消息队列配置 (可选) ==========
+  # rabbitmq:
+  #   host: ${MQ_HOST:localhost}
+  #   port: ${MQ_PORT:5672}
+  #   username: ${MQ_USERNAME:guest}
+  #   password: ${MQ_PASSWORD:guest}
+  #   virtual-host: ${MQ_VHOST:/}
+  #   connection-timeout: 5000ms
+
+  # =================== Spring Security 配置 ===================
+  security:
+    user:
+      name: ${SECURITY_USER:admin}
+      password: ${SECURITY_PASSWORD:admin}
+      roles: ADMIN
+
+  # =================== 国际化配置 ===================
+  messages:
+    basename: messages/messages,messages/errors,messages/validation
+    encoding: UTF-8
+    cache-duration: PT1H
+    fallback-to-system-locale: false
+    always-use-message-format: true
+
+  # =================== 邮件服务基础配置 ===================
   mail:
-    host: smtp.exmail.qq.com
-    port: 587
-    username: ${EMAIL_USERNAME:noreply@baseai.com}
-    password: ${EMAIL_PASSWORD}
+    host: ${MAIL_HOST:smtp.exmail.qq.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtp
+    test-connection: false
+    default-encoding: UTF-8
     properties:
       mail:
         smtp:
@@ -63,269 +129,50 @@ spring:
           starttls:
             enable: true
             required: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
+          connectiontimeout: ${MAIL_CONNECTION_TIMEOUT:5000}
+          timeout: ${MAIL_TIMEOUT:5000}
+          writetimeout: ${MAIL_WRITE_TIMEOUT:5000}
 
-  # ========== Elasticsearch配置（用于审计日志搜索） ==========
-  elasticsearch:
-    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
-    username: ${ELASTICSEARCH_USERNAME:}
-    password: ${ELASTICSEARCH_PASSWORD:}
-    connection-timeout: 5s
-    socket-timeout: 30s
-
-  # ========== Spring AI / OpenAI 配置 ==========
-  ai:
-    openai:
-      base-url: ${OPEN_BASE_URL:https://api.openai-hk.com}  # OpenAI API 地址
-      api-key: ${OPEN_API_KEY:hk-5y2tsx100002516783d25a5427af18502616fb030a23be51}
-
-  # ========== Spring Security 配置 ==========
-  security:
-    user:
-      name: ${SECURITY_USER:admin}            # 环境变量 SECURITY_USER，默认 admin
-      password: ${SECURITY_PASSWORD:admin}    # 环境变量 SECURITY_PASSWORD，默认 admin
-
-  # ========== Spring Messages i18n 配置 ==========
-  messages:
-    basename: messages.errors,messages.validation
-    encoding: UTF-8
-    cache-duration: PT1H
-    fallback-to-system-locale: false
-    always-use-message-format: true
-
-# ========== 自定义错误处理 ==========
-error:
-  handling:
-    include-stack-trace: false
-    include-exception: false
-    include-trace-id: true
-    security-event-logging: true
-
-# ========== Server ==========
+# =================== 服务器配置 ===================
 server:
-  port: ${SERVER_PORT:9999}       # 服务端口，默认 9999
-
-app:
-  jwt:
-    secret: ${JWT_SECRET:very-long-secret-key-at-least-256-bits-for-production}
-    expiration: 86400000  # 24小时
-    refresh-expiration: 604800000  # 7天
-    issuer: baseai-cloud
-
-security:
-  # 允许的跨域源
-  cors:
-    allowed-origins: "*"
-    allowed-methods: "GET,POST,PUT,DELETE,OPTIONS"
-    allowed-headers: "*"
-    allow-credentials: true
-    max-age: 3600
-
-# =================== KB Module Configuration ===================
-kb:
-  document:
-    max-size-bytes: 10485760  # 10MB
-    max-batch-size: 100
-    default-chunk-size: 1000
-    chunk-overlap: 200
-    min-chunk-size: 100
-    supported-mime-types:
-      - text/plain
-      - text/markdown
-      - application/pdf
-
-  vector:
-    default-model: text-embedding-3-small
-    dimension: 1536
-    batch-size: 50
-    timeout-seconds: 30
-    normalize: true
-    cache-ttl-seconds: 3600
-
-  search:
-    default-top-k: 10
-    max-top-k: 100
-    default-threshold: 0.7
-    min-threshold: 0.0
-    result-cache-ttl-seconds: 300
-    max-highlights: 3
-    highlight-length: 100
-
-  performance:
-    db-pool-size: 20
-    async-pool-size: 10
-    batch-process-size: 100
-    enable-query-cache: true
-    query-cache-size: 1000
-    enable-metrics: true
-    slow-query-threshold-ms: 1000
-
-  embedding:
-    provider: openai  # 或 openai, baidu, aliyun
-    api-url: https://api.openai.com/v1/embeddings
-    api-key: ${OPENAI_API_KEY}
-    timeout-ms: 30000
-    max-retries: 3
-    batch-size: 100
-    cache-enabled: true
-    cache-ttl-seconds: 3600
-
-# =================== Chat Module Configuration ===================
-baseai:
-  chat:
-    # 基础配置
-    max-message-length: 32000
-    default-embedding-model: text-embedding-3-small
-
-    # 知识检索配置
-    knowledge-retrieval-top-k: 5
-    knowledge-retrieval-threshold: 0.7
-
-    # 速率限制配置
-    rate-limit-enabled: true
-    rate-limit-max: 100
-    rate-limit-window: 60  # 分钟
-
-    # 语义分析配置
-    semantic-analysis-enabled: true
-
-    # 性能配置
-    performance:
-      async-pool-size: 10
-      max-context-tokens: 8000
-      enable-caching: true
-
-  # LLM服务配置
-  llm:
-    default-provider: openai
-    failover-enabled: true
-    default-timeout: PT2M  # ISO-8601 duration format
-
-    # OpenAI配置
-    openai:
-      enabled: true
-      api-key: ${OPENAI_API_KEY:your-openai-api-key}
-      base-url: https://api.openai.com/v1
-      organization: ${OPENAI_ORG_ID:}
-      timeout: PT2M
-
-    # Claude配置
-    claude:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: ${SERVER_CONTEXT_PATH:}
+    encoding:
+      charset: UTF-8
+      force: true
+  # 启用响应压缩，提高网络传输效率
+  compression:
+    enabled: true
+    mime-types: text/html,text/css,application/javascript,application/json,text/plain
+    min-response-size: 1024
+  # 错误页面配置
+  error:
+    whitelabel:
       enabled: false
-      api-key: ${CLAUDE_API_KEY:your-claude-api-key}
-      base-url: https://api.anthropic.com
-      timeout: PT3M
+    include-stacktrace: never
+    include-message: always
 
-    # Mock配置（开发/测试用）
-    mock:
-      enabled: false
-      simulated-delay: PT0.5S
-      simulate-errors: false
-      error-rate: 0.1
-
-# =================== 邮件服务配置 ===================
-email:
-  # 发送配置
-  from: ${EMAIL_FROM:noreply@baseai.com}
-  from-name: ${EMAIL_FROM_NAME:BaseAI System}
-  base-url: ${EMAIL_BASE_URL:https://app.baseai.com}
-
-  # 发送模式
-  async: ${EMAIL_ASYNC:true}
-
-  # 重试配置
-  retry:
-    max-attempts: ${EMAIL_RETRY_MAX_ATTEMPTS:3}
-
-  # 批量发送配置
-  batch:
-    size: ${EMAIL_BATCH_SIZE:50}
-
-  # 模板配置
-  template:
-    enabled: ${EMAIL_TEMPLATE_ENABLED:true}
-    location: classpath:/email-templates/
-    cache-enabled: true
-
-# =================== 短信服务配置 ===================
-sms:
-  # 服务商配置
-  provider: ${SMS_PROVIDER:aliyun}
-  access-key: ${SMS_ACCESS_KEY:ACCESS_KEY}
-  access-secret: ${SMS_ACCESS_SECRET:ACCESS_SECRET}
-  signature: ${SMS_SIGNATURE:BaseAI}
-
-  # 发送限制配置
-  limit:
-    per-minute: ${SMS_LIMIT_PER_MINUTE:5}
-    per-hour: ${SMS_LIMIT_PER_HOUR:20}
-    per-day: ${SMS_LIMIT_PER_DAY:100}
-
-  # 发送模式
-  async: ${SMS_ASYNC:true}
-
-  # 重复检测配置
-  duplicate-check-minutes: ${SMS_DUPLICATE_CHECK_MINUTES:2}
-
-  # 模板配置
-  templates:
-    verification-code: ${SMS_TEMPLATE_VERIFICATION_CODE:SMS_123456}
-    security-alert: ${SMS_TEMPLATE_SECURITY_ALERT:SMS_789012}
-    notification: ${SMS_TEMPLATE_NOTIFICATION:SMS_345678}
-
-# =================== 审计服务配置 ===================
-audit:
-  # 异步处理配置
-  async:
-    enabled: ${AUDIT_ASYNC_ENABLED:true}
-
-  # 批处理配置
-  batch:
-    size: ${AUDIT_BATCH_SIZE:100}
-    timeout: ${AUDIT_BATCH_TIMEOUT:5000}
-
-  # Elasticsearch配置
-  elasticsearch:
-    enabled: ${AUDIT_ELASTICSEARCH_ENABLED:true}
-    index-prefix: ${AUDIT_ELASTICSEARCH_INDEX_PREFIX:audit}
-
-  # 完整性检查配置
-  integrity:
-    check:
-      enabled: ${AUDIT_INTEGRITY_CHECK_ENABLED:true}
-      schedule: ${AUDIT_INTEGRITY_CHECK_SCHEDULE:0 2 * * *} # 每天凌晨2点
-
-  # 数据保留配置
-  retention:
-    default-days: ${AUDIT_RETENTION_DEFAULT_DAYS:2555} # 7年
-    auto-archive: ${AUDIT_RETENTION_AUTO_ARCHIVE:true}
-    archive-location: ${AUDIT_RETENTION_ARCHIVE_LOCATION:s3://baseai-audit-archive/}
-
-  # 报告配置
-  report:
-    enabled: ${AUDIT_REPORT_ENABLED:true}
-    output-location: ${AUDIT_REPORT_OUTPUT_LOCATION:/tmp/audit-reports/}
-
-  # 统计缓存配置
-  statistics:
-    cache:
-      enabled: ${AUDIT_STATISTICS_CACHE_ENABLED:true}
-      ttl: ${AUDIT_STATISTICS_CACHE_TTL:3600} # 1小时
-
-# =================== Monitoring Configuration ===================
+# =================== 管理端点配置 ===================
 management:
   server:
-    port: ${MGMT_PORT:8888}       # 管理端口（监控、健康检查等）
+    port: ${MGMT_PORT:8081}
   endpoints:
     web:
+      base-path: /actuator
       exposure:
-        include: health,info,metrics,prometheus,env  # 暴露哪些端点
+        # 暴露健康检查、指标等监控端点
+        include: health,info,metrics,scheduledtasks,prometheus,loggers,env,configprops
   endpoint:
     health:
+      # 显示详细的健康检查信息
       show-details: when-authorized
+      # 健康检查组件配置
       show-components: always
+    metrics:
+      access: unrestricted
+    prometheus:
+      access: unrestricted
   prometheus:
     metrics:
       export:
@@ -334,34 +181,788 @@ management:
     distribution:
       percentiles-histogram:
         "[http.server.requests]": true
-        "[chat.response.time]": true
+        "[baseai.chat.response.time]": true
+        "[baseai.kb.search.time]": true
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active}
   health:
     db:
-      enabled: true                 # 数据库健康检查
+      enabled: true
     redis:
-      enabled: false                # Redis健康检查
-    rabbit:
-      enabled: false                # RabbitMQ健康检查
+      enabled: true
+    diskspace:
+      enabled: true
 
-# =================== Logging Configuration 日志配置 ===================
+# =================== 日志配置 ===================
 logging:
   level:
-    root: INFO                     # 全局日志级别
-    com.cloud.baseai: DEBUG    # 应用包名日志级别
-    org.springframework.web: INFO
-    org.hibernate.SQL: WARN
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.cloud.baseai: ${LOG_LEVEL_APP:DEBUG}
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+    org.springframework.security: ${LOG_LEVEL_SECURITY:INFO}
+    org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.springframework.cache: DEBUG
+    # Spring 调度相关日志
+    org.springframework.scheduling: INFO
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
   file:
-    name: logs/baseai.log
-    max-size: 100MB
-    max-history: 30
+    name: ${LOG_FILE:logs/baseai.log}
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_FILE_MAX_SIZE:100MB}
+      max-history: ${LOG_FILE_MAX_HISTORY:30}
+      total-size-cap: ${LOG_FILE_TOTAL_SIZE:1GB}
 
-# ========== Swagger / OpenAPI ==========
+# =================== API 文档配置 ===================
 springdoc:
   api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
     path: /v3/api-docs
   swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
     path: /swagger-ui.html
+    disable-swagger-default-url: true
+  show-actuator: false
+  group-configs:
+    - group: 'public-api'
+      paths-to-match: '/api/public/**'
+    - group: 'admin-api'
+      paths-to-match: '/api/admin/**'
+
+  # =================== 应用特定配置 ===================
+  # 注意：以下配置为应用框架级别配置，不可动态修改
+baseai:
+  # ========== 系统安全配置 ==========
+  security:
+    # JWT 令牌配置
+    jwt:
+      # JWT 签名密钥，生产环境必须使用强密钥
+      secret: ${JWT_SECRET:very-long-secret-key-at-least-256-bits-for-production}
+      # 访问令牌有效期（24小时）
+      access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:86400000}
+      # 刷新令牌有效期（7天）
+      refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:604800000}
+      # JWT 发行者标识
+      issuer: ${JWT_ISSUER:baseai-system}
+
+    # 跨域资源共享配置
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080}
+      allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS,PATCH}
+      allowed-headers: ${CORS_ALLOWED_HEADERS:*}
+      allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+      max-age: ${CORS_MAX_AGE:3600}
+
+    # 密码策略配置
+    password:
+      # 最小长度要求
+      min-length: ${PASSWORD_MIN_LENGTH:8}
+      # 最大长度限制
+      max-length: ${PASSWORD_MAX_LENGTH:128}
+      # 是否要求包含大写字母
+      require-uppercase: ${PASSWORD_REQUIRE_UPPERCASE:true}
+      # 是否要求包含小写字母
+      require-lowercase: ${PASSWORD_REQUIRE_LOWERCASE:true}
+      # 是否要求包含数字
+      require-numbers: ${PASSWORD_REQUIRE_NUMBERS:true}
+      # 是否要求包含特殊字符
+      require-special-chars: ${PASSWORD_REQUIRE_SPECIAL:true}
+      # 允许的特殊字符集合
+      special-chars: "!@#$%^&*()_+-=[]{}|;:,.<>?"
+      # 密码历史记录数量，防止重复使用近期密码
+      history-count: ${PASSWORD_HISTORY_COUNT:5}
+      # 密码最大使用天数，超过后强制修改
+      max-age-days: ${PASSWORD_MAX_AGE:90}
+      # 登录失败锁定阈值
+      lockout-threshold: ${PASSWORD_LOCKOUT_THRESHOLD:5}
+      # 账户锁定时间（分钟）
+      lockout-duration-minutes: ${PASSWORD_LOCKOUT_DURATION:30}
+
+  # ========== 速率限制配置 ==========
+  rate-limit:
+    # 全局API限制
+    global:
+      # 每分钟最大请求数
+      requests-per-minute: ${RATE_LIMIT_GLOBAL_PER_MINUTE:100}
+      # 每小时最大请求数
+      requests-per-hour: ${RATE_LIMIT_GLOBAL_PER_HOUR:1000}
+      # 每天最大请求数
+      requests-per-day: ${RATE_LIMIT_GLOBAL_PER_DAY:10000}
+      # 最大并发请求数
+      concurrent-requests: ${RATE_LIMIT_CONCURRENT:20}
+      # 是否启用突发保护
+      enable-burst-protection: ${RATE_LIMIT_BURST_ENABLE:true}
+      # 突发倍数，允许短时间内超过正常限制
+      burst-multiplier: ${RATE_LIMIT_BURST_MULTIPLIER:2.0}
+
+    # 用户级别限制
+    user:
+      # 免费用户限制
+      free-tier:
+        requests-per-day: ${RATE_LIMIT_FREE_DAILY:100}
+        chat-messages-per-hour: ${RATE_LIMIT_FREE_CHAT_HOURLY:20}
+        document-uploads-per-day: ${RATE_LIMIT_FREE_UPLOAD_DAILY:10}
+      # 高级用户限制
+      premium-tier:
+        requests-per-day: ${RATE_LIMIT_PREMIUM_DAILY:5000}
+        chat-messages-per-hour: ${RATE_LIMIT_PREMIUM_CHAT_HOURLY:200}
+        document-uploads-per-day: ${RATE_LIMIT_PREMIUM_UPLOAD_DAILY:100}
+      # 企业用户限制
+      enterprise-tier:
+        requests-per-day: ${RATE_LIMIT_ENTERPRISE_DAILY:50000}
+        chat-messages-per-hour: ${RATE_LIMIT_ENTERPRISE_CHAT_HOURLY:2000}
+        document-uploads-per-day: ${RATE_LIMIT_ENTERPRISE_UPLOAD_DAILY:1000}
+
+  # ========== 知识库模块配置 ==========
+  knowledge-base:
+    # 文档处理配置
+    document:
+      # 单个文档最大大小（字节），默认10MB
+      max-size-bytes: ${KB_DOC_MAX_SIZE:10485760}
+      # 批量处理最大数量
+      max-batch-size: ${KB_DOC_MAX_BATCH:100}
+      # 批量处理超时时间（秒）
+      batch-timeout-seconds: ${KB_DOC_BATCH_TIMEOUT:300}
+      # 处理失败重试次数
+      retry-attempts: ${KB_DOC_RETRY_ATTEMPTS:3}
+      # 支持的文件格式
+      supported-formats:
+        - pdf
+        - txt
+        - md
+        - docx
+        - doc
+        - rtf
+      # 支持的MIME类型
+      supported-mime-types:
+        - text/plain
+        - text/markdown
+        - application/pdf
+        - application/msword
+        - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+    # 文档分块配置
+    chunking:
+      # 默认分块大小（字符数）
+      default-chunk-size: ${KB_CHUNK_SIZE:1000}
+      # 分块重叠大小（字符数），保证语义连续性
+      chunk-overlap: ${KB_CHUNK_OVERLAP:200}
+      # 最小分块大小，避免过小的分块
+      min-chunk-size: ${KB_CHUNK_MIN_SIZE:100}
+      # 最大分块大小，避免过大的分块影响检索精度
+      max-chunk-size: ${KB_CHUNK_MAX_SIZE:4000}
+      # 是否启用自适应分块，根据内容类型调整策略
+      adaptive-chunking: ${KB_ADAPTIVE_CHUNKING:true}
+      # 按内容类型的分块策略
+      content-type-strategies:
+        markdown:
+          chunk-size: 800
+          overlap: 150
+        pdf:
+          chunk-size: 1200
+          overlap: 250
+        text:
+          chunk-size: 1000
+          overlap: 200
+
+    # 向量嵌入配置
+    embedding:
+      # 默认嵌入模型
+      default-model: ${KB_EMBEDDING_MODEL:text-embedding-3-small}
+      # 向量维度
+      dimension: ${KB_EMBEDDING_DIMENSION:1536}
+      # 批量处理大小
+      batch-size: ${KB_EMBEDDING_BATCH_SIZE:50}
+      # API调用超时时间（秒）
+      timeout-seconds: ${KB_EMBEDDING_TIMEOUT:30}
+      # 是否标准化向量
+      normalize: ${KB_EMBEDDING_NORMALIZE:true}
+      # 备用模型列表，当主模型不可用时使用
+      fallback-models:
+        - text-embedding-ada-002
+      # 模型能力配置，用于智能选择模型
+      model-capabilities:
+        text-embedding-3-small:
+          max-tokens: 8191
+          dimension: 1536
+          cost-per-token: 0.00002
+        text-embedding-ada-002:
+          max-tokens: 8191
+          dimension: 1536
+          cost-per-token: 0.0001
+
+    # 向量搜索配置
+    search:
+      # 默认返回结果数量
+      default-top-k: ${KB_SEARCH_TOP_K:10}
+      # 最大返回结果数量
+      max-top-k: ${KB_SEARCH_MAX_TOP_K:100}
+      # 默认相似度阈值
+      default-threshold: ${KB_SEARCH_THRESHOLD:0.7}
+      # 最小相似度阈值
+      min-threshold: ${KB_SEARCH_MIN_THRESHOLD:0.0}
+      # 是否启用重排序，提高搜索质量
+      enable-rerank: ${KB_SEARCH_ENABLE_RERANK:true}
+      # 重排序候选数量
+      rerank-top-k: ${KB_SEARCH_RERANK_TOP_K:20}
+      # 搜索结果缓存时间（秒）
+      result-cache-ttl-seconds: ${KB_SEARCH_CACHE_TTL:300}
+      # 高亮显示配置
+      highlight:
+        enable: ${KB_SEARCH_HIGHLIGHT_ENABLE:true}
+        max-highlights: ${KB_SEARCH_HIGHLIGHT_MAX:3}
+        highlight-length: ${KB_SEARCH_HIGHLIGHT_LENGTH:100}
+        fragment-size: ${KB_SEARCH_FRAGMENT_SIZE:150}
+
+    # 性能优化配置
+    performance:
+      # 数据库连接池大小
+      db-pool-size: ${KB_PERF_DB_POOL:20}
+      # 异步处理线程池大小
+      async-pool-size: ${KB_PERF_ASYNC_POOL:10}
+      # 批量处理大小
+      batch-process-size: ${KB_PERF_BATCH_SIZE:100}
+      # 是否启用查询缓存
+      enable-query-cache: ${KB_PERF_QUERY_CACHE:true}
+      # 查询缓存大小
+      query-cache-size: ${KB_PERF_CACHE_SIZE:1000}
+      # 是否启用性能指标收集
+      enable-metrics: ${KB_PERF_METRICS:true}
+      # 慢查询阈值（毫秒）
+      slow-query-threshold-ms: ${KB_PERF_SLOW_QUERY:1000}
+
+  # ========== 对话系统配置 ==========
+  chat:
+    # 消息约束配置
+    message:
+      # 单条消息最大长度（字符数）
+      max-length: ${CHAT_MSG_MAX_LENGTH:32000}
+      # 上下文中最大消息数量
+      max-context-messages: ${CHAT_MSG_MAX_CONTEXT:50}
+      # 上下文最大令牌数
+      max-context-tokens: ${CHAT_MSG_MAX_TOKENS:8000}
+      # 是否启用消息内容验证
+      enable-validation: ${CHAT_MSG_VALIDATION:true}
+      # 是否自动截断过长消息
+      auto-truncate: ${CHAT_MSG_AUTO_TRUNCATE:true}
+      # 被阻止的内容模式列表
+      blocked-patterns:
+        - spam
+        - abuse
+        - advertisement
+
+    # 知识检索配置
+    knowledge-retrieval:
+      # 检索结果数量
+      top-k: ${CHAT_KB_TOP_K:5}
+      # 相似度阈值
+      threshold: ${CHAT_KB_THRESHOLD:0.7}
+      # 是否启用上下文增强
+      enable-context-enrichment: ${CHAT_KB_CONTEXT_ENRICHMENT:true}
+      # 最大检索字符数
+      max-retrieved-chars: ${CHAT_KB_MAX_CHARS:4000}
+      # 检索超时时间（毫秒）
+      retrieval-timeout-ms: ${CHAT_KB_TIMEOUT:5000}
+      # 是否启用引用功能
+      enable-citation: ${CHAT_KB_CITATION:true}
+      # 引用格式
+      citation-format: ${CHAT_KB_CITATION_FORMAT:markdown}
+
+    # AI功能配置
+    ai-features:
+      # 是否启用语义分析
+      enable-semantic-analysis: ${CHAT_AI_SEMANTIC:true}
+      # 是否启用情感检测
+      enable-sentiment-detection: ${CHAT_AI_SENTIMENT:false}
+      # 是否启用自动摘要
+      enable-auto-summary: ${CHAT_AI_SUMMARY:true}
+      # 回复风格：conservative（保守）、balanced（平衡）、creative（创意）
+      response-style: ${CHAT_AI_STYLE:balanced}
+      # 创造性水平（0.0-1.0）
+      creativity-level: ${CHAT_AI_CREATIVITY:0.7}
+      # 安全等级：low、medium、high
+      safety-level: ${CHAT_AI_SAFETY:high}
+      # 支持的语言列表
+      supported-languages:
+        - zh
+        - en
+        - ja
+        - ko
+      # 默认语言
+      default-language: ${CHAT_AI_DEFAULT_LANG:zh}
+
+  # ========== 大语言模型服务配置 ==========
+  llm:
+    # 默认服务提供商
+    default-provider: ${LLM_DEFAULT_PROVIDER:openai}
+    # 是否启用故障转移
+    failover-enabled: ${LLM_FAILOVER_ENABLED:true}
+    # 负载均衡策略：round_robin、random、weighted
+    load-balancing: ${LLM_LOAD_BALANCING:round_robin}
+
+    # OpenAI 配置
+    openai:
+      enabled: ${LLM_OPENAI_ENABLED:true}
+      # API基础URL，支持代理服务
+      base-url: ${LLM_OPENAI_BASE_URL:https://api.openai-hk.com}
+      # API密钥
+      api-key: ${LLM_OPENAI_API_KEY:hk-5y2tsx100002516783d25a5427af18502616fb030a23be51}
+      # 组织ID（可选）
+      organization: ${LLM_OPENAI_ORG_ID:}
+      # 请求超时时间
+      timeout: ${LLM_OPENAI_TIMEOUT:PT2M}
+      # 最大重试次数
+      max-retries: ${LLM_OPENAI_MAX_RETRIES:3}
+      # 支持的模型列表
+      models:
+        - gpt-4
+        - gpt-4-turbo
+        - gpt-3.5-turbo
+        - text-embedding-3-small
+        - text-embedding-3-large
+
+    # Claude 配置
+    claude:
+      enabled: ${LLM_CLAUDE_ENABLED:false}
+      # Claude API密钥
+      api-key: ${LLM_CLAUDE_API_KEY:}
+      # API基础URL
+      base-url: ${LLM_CLAUDE_BASE_URL:https://api.anthropic.com}
+      # 请求超时时间
+      timeout: ${LLM_CLAUDE_TIMEOUT:PT3M}
+      # 最大重试次数
+      max-retries: ${LLM_CLAUDE_MAX_RETRIES:2}
+      # 支持的模型列表
+      models:
+        - claude-3-sonnet-20240229
+        - claude-3-haiku-20240307
+
+    # 阿里云通义千问 (Qwen) 配置
+    qwen:
+      enabled: ${LLM_QWEN_ENABLED:true}
+      # API基础URL，通义千问的服务地址
+      base-url: ${LLM_QWEN_BASE_URL:https://dashscope.aliyuncs.com}
+      # API密钥
+      api-key: ${LLM_QWEN_API_KEY:sk-xxxxxxxxxxxxxxxxxxxxxxxx}
+      # 请求超时时间
+      timeout: ${LLM_QWEN_TIMEOUT:PT2M}
+      # 最大重试次数
+      max-retries: ${LLM_QWEN_MAX_RETRIES:3}
+      # 支持的模型列表
+      models:
+        # 主力模型，性能和效果均衡
+        - qwen-plus
+        # 速度优化模型
+        - qwen-turbo
+        # 最高性能模型
+        - qwen-max
+        # 长文本优化模型
+        - qwen-max-longcontext
+        # 文本嵌入/向量化模型
+        - text-embedding-v2
+
+    # 默认模型参数
+    default-parameters:
+      # 默认使用的模型
+      model: ${LLM_DEFAULT_MODEL:gpt-3.5-turbo}
+      # 温度参数，控制回答的随机性
+      temperature: ${LLM_DEFAULT_TEMPERATURE:0.7}
+      # 最大生成令牌数
+      max-tokens: ${LLM_DEFAULT_MAX_TOKENS:1000}
+      # Top-p 采样参数
+      top-p: ${LLM_DEFAULT_TOP_P:1.0}
+      # 频率惩罚参数
+      frequency-penalty: ${LLM_DEFAULT_FREQ_PENALTY:0.0}
+      # 存在惩罚参数
+      presence-penalty: ${LLM_DEFAULT_PRES_PENALTY:0.0}
+
+    # 模型特定参数
+    model-specific-parameters:
+      'gpt-4':
+        temperature: 0.5
+        max-tokens: 2000
+      '[gpt-3.5-turbo]':
+        temperature: 0.7
+        max-tokens: 1000
+      'claude-3-sonnet-20240229':
+        temperature: 0.6
+        max-tokens: 1500
+
+    # 高级功能配置
+    features:
+      # 是否启用流式响应
+      enable-streaming: ${LLM_ENABLE_STREAMING:true}
+      # 是否启用函数调用
+      enable-function-calling: ${LLM_ENABLE_FUNCTIONS:true}
+      # 是否启用响应缓存
+      enable-response-cache: ${LLM_ENABLE_CACHE:true}
+      # 响应缓存时间（秒）
+      response-cache-ttl: ${LLM_CACHE_TTL:3600}
+
+  # ========== 邮件服务配置 ==========
+  email:
+    # 基本发送配置
+    sender:
+      # 默认发件人地址
+      from-address: ${EMAIL_FROM:noreply@baseai.com}
+      # 默认发件人名称
+      from-name: ${EMAIL_FROM_NAME:BaseAI系统}
+      # 回复地址
+      reply-to: ${EMAIL_REPLY_TO:support@baseai.com}
+      # 退信地址
+      bounce-address: ${EMAIL_BOUNCE:bounce@baseai.com}
+      # 字符编码
+      charset: ${EMAIL_CHARSET:UTF-8}
+      # 是否启用HTML格式
+      enable-html: ${EMAIL_ENABLE_HTML:true}
+      # 是否启用邮件跟踪
+      enable-tracking: ${EMAIL_ENABLE_TRACKING:false}
+
+    # 投递设置
+    delivery:
+      # 是否启用异步发送
+      enable-async: ${EMAIL_ASYNC:true}
+      # 异步队列大小
+      async-queue-size: ${EMAIL_ASYNC_QUEUE:1000}
+      # 最大重试次数
+      max-retry-attempts: ${EMAIL_MAX_RETRY:3}
+      # 重试延迟时间（秒）
+      retry-delays:
+        - 60    # 第一次重试：1分钟后
+        - 300   # 第二次重试：5分钟后
+        - 900   # 第三次重试：15分钟后
+      # 批量发送大小
+      batch-size: ${EMAIL_BATCH_SIZE:50}
+      # 批量发送间隔（毫秒）
+      batch-delay-ms: ${EMAIL_BATCH_DELAY:100}
+      # 投递超时时间（秒）
+      delivery-timeout-seconds: ${EMAIL_DELIVERY_TIMEOUT:30}
+      # 是否启用死信队列
+      enable-dead-letter-queue: ${EMAIL_ENABLE_DLQ:true}
+
+    # 模板配置
+    template:
+      # 是否启用模板功能
+      enabled: ${EMAIL_TEMPLATE_ENABLED:true}
+      # 模板缓存时间（秒）
+      cache-ttl-seconds: ${EMAIL_TEMPLATE_CACHE_TTL:3600}
+      # 默认模板
+      default-template: ${EMAIL_DEFAULT_TEMPLATE:system-notification}
+      # 模板文件位置
+      location: ${EMAIL_TEMPLATE_LOCATION:classpath:/email-templates/}
+      # 是否启用模板缓存
+      cache-enabled: ${EMAIL_TEMPLATE_CACHE_ENABLED:true}
+      # 支持的模板格式
+      supported-formats:
+        - html
+        - text
+      # 是否自动生成纯文本版本
+      auto-generate-text: ${EMAIL_AUTO_TEXT:true}
+      # 全局模板变量
+      global-variables:
+        system-name: BaseAI
+        support-email: support@baseai.com
+        website-url: https://baseai.com
+
+  # ========== 短信服务配置 ==========
+  sms:
+    # 服务提供商配置
+    provider:
+      # 主要服务商
+      primary: ${SMS_PRIMARY_PROVIDER:aliyun}
+      # 备用服务商列表
+      fallback-providers:
+        - tencent
+        - huawei
+      # 是否启用故障转移
+      enable-fallback: ${SMS_ENABLE_FALLBACK:true}
+      # 故障转移阈值（连续失败次数）
+      failover-threshold: ${SMS_FAILOVER_THRESHOLD:3}
+      # 服务商权重配置（用于负载均衡）
+      weights:
+        aliyun: 70
+        tencent: 20
+        huawei: 10
+
+    # 阿里云短信配置
+    aliyun:
+      access-key: ${SMS_ALIYUN_ACCESS_KEY:}
+      access-secret: ${SMS_ALIYUN_ACCESS_SECRET:}
+      signature: ${SMS_ALIYUN_SIGNATURE:BaseAI}
+      region: ${SMS_ALIYUN_REGION:cn-hangzhou}
+
+    # 腾讯云短信配置
+    tencent:
+      secret-id: ${SMS_TENCENT_SECRET_ID:}
+      secret-key: ${SMS_TENCENT_SECRET_KEY:}
+      signature: ${SMS_TENCENT_SIGNATURE:BaseAI}
+      region: ${SMS_TENCENT_REGION:ap-guangzhou}
+
+    # 发送限制配置
+    rate-limits:
+      # 全局限制
+      global:
+        per-minute: ${SMS_GLOBAL_PER_MINUTE:100}
+        per-hour: ${SMS_GLOBAL_PER_HOUR:1000}
+        per-day: ${SMS_GLOBAL_PER_DAY:5000}
+      # 用户级别限制
+      user:
+        per-minute: ${SMS_USER_PER_MINUTE:5}
+        per-hour: ${SMS_USER_PER_HOUR:20}
+        per-day: ${SMS_USER_PER_DAY:100}
+      # 手机号级别限制
+      phone:
+        per-minute: ${SMS_PHONE_PER_MINUTE:1}
+        per-hour: ${SMS_PHONE_PER_HOUR:10}
+        per-day: ${SMS_PHONE_PER_DAY:20}
+
+    # 内容配置
+    content:
+      # 重复检测时间（分钟），防止重复发送
+      duplicate-check-minutes: ${SMS_DUPLICATE_CHECK:2}
+      # 失败后启用验证码的次数
+      enable-captcha-after-failures: ${SMS_CAPTCHA_THRESHOLD:3}
+      # 短信模板配置
+      templates:
+        verification-code:
+          template-id: ${SMS_TEMPLATE_VERIFICATION:SMS_123456}
+          content: "您的验证码是{code}，有效期{expire}分钟，请勿泄露。"
+          params:
+            - code
+            - expire
+        security-alert:
+          template-id: ${SMS_TEMPLATE_SECURITY:SMS_789012}
+          content: "您的账户在{time}发生{action}操作，如非本人操作请及时联系客服。"
+          params:
+            - time
+            - action
+        notification:
+          template-id: ${SMS_TEMPLATE_NOTIFICATION:SMS_345678}
+          content: "系统通知：{message}"
+          params:
+            - message
+
+  # ========== 审计系统配置 ==========
+  audit:
+    # 日志记录配置
+    logging:
+      # 是否启用异步处理
+      enable-async: ${AUDIT_ASYNC:true}
+      # 异步队列大小
+      async-queue-size: ${AUDIT_QUEUE_SIZE:10000}
+      # 批量处理大小
+      batch-size: ${AUDIT_BATCH_SIZE:100}
+      # 批量处理超时时间（毫秒）
+      batch-timeout-ms: ${AUDIT_BATCH_TIMEOUT:5000}
+      # 是否启用压缩
+      enable-compression: ${AUDIT_COMPRESSION:true}
+      # 需要记录的日志级别
+      log-levels:
+        - ERROR
+        - WARN
+        - INFO
+        - DEBUG
+      # 敏感字段列表（将被屏蔽）
+      sensitive-fields:
+        - password
+        - token
+        - key
+        - secret
+        - apiKey
+      # 是否启用字段屏蔽
+      enable-field-masking: ${AUDIT_FIELD_MASKING:true}
+
+    # 数据保留策略
+    retention:
+      # 默认保留天数（7年）
+      default-days: ${AUDIT_RETENTION_DAYS:2555}
+      # 按级别的保留策略
+      by-level:
+        ERROR: ${AUDIT_RETENTION_ERROR:3650}   # 错误日志保留10年
+        WARN: ${AUDIT_RETENTION_WARN:1825}     # 警告日志保留5年
+        INFO: ${AUDIT_RETENTION_INFO:365}      # 信息日志保留1年
+        DEBUG: ${AUDIT_RETENTION_DEBUG:30}     # 调试日志保留30天
+      # 是否启用自动归档
+      enable-auto-archive: ${AUDIT_AUTO_ARCHIVE:true}
+      # 归档阈值天数
+      archive-after-days: ${AUDIT_ARCHIVE_AFTER:365}
+      # 归档压缩方式
+      archive-compression: ${AUDIT_ARCHIVE_COMPRESSION:gzip}
+      # 彻底删除阈值天数
+      purge-after-days: ${AUDIT_PURGE_AFTER:2555}
+      # 是否启用法律保留
+      enable-legal-hold: ${AUDIT_LEGAL_HOLD:true}
+
+    # Elasticsearch存储配置
+    elasticsearch:
+      # 是否启用ES存储
+      enabled: ${AUDIT_ES_ENABLED:true}
+      # 索引名称前缀
+      index-prefix: ${AUDIT_ES_INDEX_PREFIX:baseai-audit}
+      # 索引模板名称
+      index-template: ${AUDIT_ES_TEMPLATE:audit-template}
+      # 每个索引的分片数
+      shards-per-index: ${AUDIT_ES_SHARDS:1}
+      # 每个索引的副本数
+      replicas-per-index: ${AUDIT_ES_REPLICAS:1}
+      # 刷新间隔
+      refresh-interval: ${AUDIT_ES_REFRESH:30s}
+      # 是否启用索引生命周期管理
+      enable-ilm: ${AUDIT_ES_ILM:true}
+      # 生命周期管理策略
+      ilm-policy:
+        hot-phase-days: 7     # 热阶段：7天
+        warm-phase-days: 30   # 温阶段：30天
+        cold-phase-days: 90   # 冷阶段：90天
+        delete-phase-days: 2555 # 删除阶段：7年
+
+    # 完整性检查配置
+    integrity:
+      # 是否启用完整性检查
+      enabled: ${AUDIT_INTEGRITY_ENABLED:true}
+      # 检查调度表达式（每天凌晨2点）
+      schedule: ${AUDIT_INTEGRITY_SCHEDULE:0 2 * * *}
+      # 检查方式：checksum、count、sampling
+      check-method: ${AUDIT_INTEGRITY_METHOD:checksum}
+      # 采样检查比例（当使用sampling方法时）
+      sampling-ratio: ${AUDIT_INTEGRITY_SAMPLING:0.1}
+
+    # 报告配置
+    reporting:
+      # 是否启用报告功能
+      enabled: ${AUDIT_REPORT_ENABLED:true}
+      # 报告输出位置
+      output-location: ${AUDIT_REPORT_OUTPUT:/tmp/audit-reports/}
+      # 报告格式：PDF、EXCEL、CSV
+      default-format: ${AUDIT_REPORT_FORMAT:PDF}
+      # 自动报告调度（每月1号生成月度报告）
+      auto-schedule: ${AUDIT_REPORT_SCHEDULE:0 0 1 * *}
+      # 报告保留天数
+      report-retention-days: ${AUDIT_REPORT_RETENTION:365}
+
+  # ========== 缓存配置 ==========
+  cache:
+    # Redis缓存配置
+    redis:
+      # 默认过期时间（秒）
+      default-ttl-seconds: ${CACHE_REDIS_DEFAULT_TTL:3600}
+      # 最大过期时间（秒）
+      max-ttl-seconds: ${CACHE_REDIS_MAX_TTL:86400}
+      # 键名前缀
+      key-prefix: ${CACHE_REDIS_PREFIX:baseai:}
+      # 是否启用压缩
+      enable-compression: ${CACHE_REDIS_COMPRESSION:true}
+      # 压缩阈值（字节）
+      compression-threshold-bytes: ${CACHE_REDIS_COMPRESSION_THRESHOLD:1024}
+      # 最大键名长度
+      max-key-length: ${CACHE_REDIS_MAX_KEY_LENGTH:250}
+
+    # 应用级缓存配置
+    application:
+      # 配置缓存过期时间（秒）
+      config-cache-ttl-seconds: ${CACHE_APP_CONFIG_TTL:300}
+      # 用户会话缓存过期时间（秒）
+      user-session-cache-ttl-seconds: ${CACHE_APP_SESSION_TTL:1800}
+      # API响应缓存过期时间（秒）
+      api-response-cache-ttl-seconds: ${CACHE_APP_API_TTL:60}
+      # 静态内容缓存过期时间（秒）
+      static-content-cache-ttl-seconds: ${CACHE_APP_STATIC_TTL:3600}
+      # 是否启用缓存预热
+      enable-cache-warming: ${CACHE_APP_WARMING:true}
+      # 缓存预热调度表达式（每6小时）
+      cache-warming-schedule: ${CACHE_APP_WARMING_SCHEDULE:0 */6 * * *}
+      # 最大缓存大小（MB）
+      max-cache-size-mb: ${CACHE_APP_MAX_SIZE:512}
+      # 缓存淘汰策略：LRU、LFU、FIFO
+      eviction-policy: ${CACHE_APP_EVICTION:LRU}
+
+  # ========== 异步处理配置 ==========
+  async:
+    # 线程池核心大小
+    core-pool-size: ${ASYNC_CORE_POOL_SIZE:2}
+    # 线程池最大大小
+    max-pool-size: ${ASYNC_MAX_POOL_SIZE:8}
+    # 队列容量
+    queue-capacity: ${ASYNC_QUEUE_CAPACITY:500}
+    # 线程名称前缀
+    thread-name-prefix: "BaseAI-Async-"
+    # 线程保活时间（秒）
+    keep-alive-seconds: ${ASYNC_KEEP_ALIVE:60}
+    # 是否允许核心线程超时
+    allow-core-thread-timeout: ${ASYNC_ALLOW_CORE_TIMEOUT:true}
+    # 拒绝策略：ABORT、CALLER_RUNS、DISCARD、DISCARD_OLDEST
+    rejection-policy: ${ASYNC_REJECTION_POLICY:CALLER_RUNS}
+
+  # ========== 定时任务调度器配置 ==========
+  scheduling:
+    # 全局开关：是否启用定时任务功能
+    enabled: true
+    # 线程池配置
+    pool:
+      # 线程池大小（核心线程数5-10-15-50）
+      size: 15
+      # 是否允许核心线程超时（true：空闲线程会被回收，节省资源；false：核心线程始终保持活跃状态）
+      allow-core-thread-timeout: false
+      # 线程空闲时间（秒），当 allow-core-thread-timeout 为 true 时生效
+      keep-alive-seconds: 60
+    # 线程配置
+    thread:
+      # 线程名称前缀
+      name-prefix: "BaseAI-Scheduled-"
+      # 线程优先级 (1-10)
+      priority: 5
+    # 关闭行为配置
+    shutdown:
+      # 应用关闭时是否等待正在执行的任务完成
+      wait-for-tasks-to-complete: true
+      # 等待任务完成的最长时间（秒）
+      await-termination-seconds: 120
+
+  # ========== 文件存储配置 ==========
+  storage:
+    # 本地存储配置
+    local:
+      # 是否启用本地存储
+      enabled: ${STORAGE_LOCAL_ENABLED:true}
+      # 存储根路径
+      base-path: ${STORAGE_LOCAL_BASE_PATH:./storage}
+      # 单个文件最大大小
+      max-file-size: ${STORAGE_LOCAL_MAX_SIZE:10MB}
+      # 允许的文件类型
+      allowed-types:
+        - pdf
+        - txt
+        - md
+        - docx
+        - doc
+        - jpg
+        - jpeg
+        - png
+        - gif
+      # 是否启用文件校验
+      enable-checksum: ${STORAGE_LOCAL_CHECKSUM:true}
+      # 校验算法：MD5、SHA1、SHA256
+      checksum-algorithm: ${STORAGE_LOCAL_CHECKSUM_ALG:SHA256}
+
+    # 云存储配置（可选）
+    cloud:
+      # 是否启用云存储
+      enabled: ${STORAGE_CLOUD_ENABLED:false}
+      # 云存储提供商：oss、s3、cos等
+      provider: ${STORAGE_CLOUD_PROVIDER:oss}
+      # 服务端点
+      endpoint: ${STORAGE_CLOUD_ENDPOINT:}
+      # 访问密钥
+      access-key: ${STORAGE_CLOUD_ACCESS_KEY:}
+      # 密钥
+      secret-key: ${STORAGE_CLOUD_SECRET_KEY:}
+      # 存储桶名称
+      bucket: ${STORAGE_CLOUD_BUCKET:baseai-storage}
+      # 是否启用CDN加速
+      enable-cdn: ${STORAGE_CLOUD_CDN:false}
+      # CDN域名
+      cdn-domain: ${STORAGE_CLOUD_CDN_DOMAIN:}

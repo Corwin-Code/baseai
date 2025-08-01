@@ -1,6 +1,5 @@
 package com.cloud.baseai.infrastructure.exception;
 
-import com.cloud.baseai.infrastructure.config.ErrorHandlingProperties;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.RequiredArgsConstructor;
@@ -46,8 +45,6 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class UnifiedGlobalExceptionHandler {
 
-    private final ErrorHandlingProperties errorProps;
-
     private static final Logger log = LoggerFactory.getLogger(UnifiedGlobalExceptionHandler.class);
 
     /**
@@ -70,21 +67,13 @@ public class UnifiedGlobalExceptionHandler {
 
         // 构建详细的错误响应
         ErrorResponse errorResponse = ErrorResponse.from(ex)
-                .addDetail("path", extractPath(request));
-
-        if (errorProps.isIncludeTraceId()) {
-            errorResponse.addDetail("traceId", traceId);
-        }
-
-        if (errorProps.isIncludeException()) {
-            errorResponse.addDetail("exception", ex.getClass().getSimpleName());
-        }
-        if (errorProps.isIncludeStackTrace()) {
-            errorResponse.addDetail("stackTrace", ex.getStackTrace());
-        }
+                .addDetail("path", extractPath(request))
+                .addDetail("traceId", traceId)
+                .addDetail("exception", ex.getClass().getSimpleName())
+                .addDetail("stackTrace", ex.getStackTrace());
 
         // 如果是安全相关的错误，需要特殊处理
-        if (errorProps.isSecurityEventLogging() && isSecurityRelatedError(ex.getErrorCode())) {
+        if (isSecurityRelatedError(ex.getErrorCode())) {
             logSecurityEvent(ex, request, traceId);
         }
 
@@ -121,7 +110,7 @@ public class UnifiedGlobalExceptionHandler {
                 .message("请求参数验证失败")
                 .detail("fieldErrors", fieldErrors)
                 .detail("path", extractPath(request))
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .build();
 
         ApiResult<Object> result = ApiResult.error(errorResponse);
@@ -149,7 +138,7 @@ public class UnifiedGlobalExceptionHandler {
                 .code("CONSTRAINT_VIOLATION")
                 .message("数据约束验证失败")
                 .detail("violations", violations)
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .build();
 
         ApiResult<Object> result = ApiResult.error(errorResponse);
@@ -175,7 +164,7 @@ public class UnifiedGlobalExceptionHandler {
                 .code("BINDING_ERROR")
                 .message("参数绑定失败")
                 .detail("fieldErrors", fieldErrors)
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .build();
 
         ApiResult<Object> result = ApiResult.error(errorResponse);
@@ -196,7 +185,7 @@ public class UnifiedGlobalExceptionHandler {
                 .code("FILE_SIZE_EXCEEDED")
                 .message("上传文件大小超出限制")
                 .detail("maxSize", ex.getMaxUploadSize())
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .build();
 
         ApiResult<Object> result = ApiResult.error(errorResponse);
@@ -220,7 +209,7 @@ public class UnifiedGlobalExceptionHandler {
                 .code("DATABASE_ERROR")
                 .message("数据处理暂时不可用，请稍后重试")
                 .detail("retryable", true)
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .build();
 
         ApiResult<Object> result = ApiResult.error(errorResponse);
@@ -240,7 +229,7 @@ public class UnifiedGlobalExceptionHandler {
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .code("ILLEGAL_ARGUMENT")
                 .message("请求参数不正确: " + ex.getMessage())
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .build();
 
         ApiResult<Object> result = ApiResult.error(errorResponse);
@@ -260,7 +249,7 @@ public class UnifiedGlobalExceptionHandler {
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .code("RUNTIME_ERROR")
                 .message("系统运行时发生错误，请稍后重试")
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .detail("recoverable", isRecoverableException(ex))
                 .build();
 
@@ -281,7 +270,7 @@ public class UnifiedGlobalExceptionHandler {
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .code("SYSTEM_ERROR")
                 .message("系统暂时不可用，请稍后重试")
-                .detail("traceId", errorProps.isIncludeTraceId() ? traceId : null)
+                .detail("traceId", traceId)
                 .build();
 
         ApiResult<Object> result = ApiResult.error(errorResponse);
