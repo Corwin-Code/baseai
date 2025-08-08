@@ -52,7 +52,6 @@ import java.util.List;
 @RequestMapping("/api/v1/audit")
 @Validated
 @Tag(name = "审计管理", description = "Audit Management APIs - 提供安全审计和操作记录查询功能")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class AuditController {
 
     private static final Logger log = LoggerFactory.getLogger(AuditController.class);

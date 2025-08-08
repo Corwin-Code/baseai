@@ -110,11 +110,6 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
 
-        // 添加CORS头部，支持跨域请求
-        response.setHeader("Access-Control-Allow-Origin", "*");
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-
         try {
             // 将错误响应序列化为JSON并写入响应流
             String jsonResponse = objectMapper.writeValueAsString(errorResponse);

@@ -49,7 +49,6 @@ import java.util.List;
 @RequestMapping("/api/v1/mcp")
 @Validated
 @Tag(name = "MCP工具管理", description = "Model Context Protocol Tool Management - 提供AI工具的注册、授权和调用服务")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class McpController {
 
     private static final Logger log = LoggerFactory.getLogger(McpController.class);

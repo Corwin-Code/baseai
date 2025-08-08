@@ -43,7 +43,6 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/misc")
 @Validated
 @Tag(name = "基础设施功能管理", description = "Miscellaneous APIs - 提供提示词模板和文件对象管理功能")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class MiscController {
 
     private static final Logger log = LoggerFactory.getLogger(MiscController.class);

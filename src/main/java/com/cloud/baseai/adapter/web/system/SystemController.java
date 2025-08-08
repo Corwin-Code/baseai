@@ -53,7 +53,6 @@ import java.util.Optional;
 @RequestMapping("/api/v1/system")
 @Validated
 @Tag(name = "系统管理", description = "System Management APIs - 提供系统配置、任务管理和监控功能")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class SystemController {
 
     private static final Logger log = LoggerFactory.getLogger(SystemController.class);

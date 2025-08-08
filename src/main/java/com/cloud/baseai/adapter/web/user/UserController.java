@@ -55,7 +55,6 @@ import java.util.List;
 @RequestMapping("/api/v1/users")
 @Validated
 @Tag(name = "用户管理", description = "User Management APIs - 提供完整的多租户用户管理解决方案")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class UserController {
 
     private static final Logger log = LoggerFactory.getLogger(UserController.class);

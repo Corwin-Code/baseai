@@ -18,7 +18,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
 
 /**
  * <h1>JWT认证过滤器</h1>
@@ -61,27 +60,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private static final String BEARER_PREFIX = "Bearer ";
 
-    /**
-     * 不需要JWT认证的路径列表
-     * <p>这些路径通常是公开访问的，如登录、注册、健康检查等</p>
-     */
-    private static final List<String> EXCLUDED_PATHS = List.of(
-            "/api/v1/users/register",
-            "/api/v1/users/activate",
-            "/api/v1/auth/",
-            "/actuator/",
-            "/swagger-ui/",
-            "/v3/api-docs"
-    );
-
-    private final JwtUtils jwtUtils;
+    private final JwtTokenService jwtTokenService;
     private final CustomUserDetailsService userDetailsService;
 
     /**
      * 构造函数，注入依赖的服务
      */
-    public JwtAuthenticationFilter(JwtUtils jwtUtils, CustomUserDetailsService userDetailsService) {
-        this.jwtUtils = jwtUtils;
+    public JwtAuthenticationFilter(JwtTokenService jwtTokenService, CustomUserDetailsService userDetailsService) {
+        this.jwtTokenService = jwtTokenService;
         this.userDetailsService = userDetailsService;
     }
 
@@ -115,14 +101,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
-            // ========== 步骤1：检查是否需要认证 ==========
-            if (shouldSkipAuthentication(requestURI)) {
-                log.debug("跳过认证检查: {}", requestURI);
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            // ========== 步骤2：提取JWT令牌 ==========
+            // ========== 步骤1：提取JWT令牌 ==========
             String jwt = extractJwtFromRequest(request);
             if (jwt == null) {
                 log.debug("请求中未找到JWT令牌: {}", requestURI);
@@ -130,22 +109,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            // ========== 步骤3：验证JWT令牌 ==========
-            if (!jwtUtils.validateToken(jwt)) {
+            // ========== 步骤2：验证JWT令牌 ==========
+            if (!jwtTokenService.validateToken(jwt, null)) {
                 log.debug("JWT令牌验证失败: {}", requestURI);
                 // 令牌无效，但不在这里处理错误，让后续的认证入口点处理
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            // ========== 步骤4：检查是否已经认证 ==========
+            // ========== 步骤3：检查是否已经认证 ==========
             if (SecurityContextHolder.getContext().getAuthentication() != null) {
                 log.debug("用户已认证，跳过重复处理");
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            // ========== 步骤5：加载用户信息并设置认证 ==========
+            // ========== 步骤4：加载用户信息并设置认证 ==========
             authenticateUser(jwt, request);
 
         } catch (Exception e) {
@@ -156,28 +135,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         // ========== 步骤6：继续过滤器链 ==========
         filterChain.doFilter(request, response);
-    }
-
-    /**
-     * 检查请求路径是否需要跳过认证
-     *
-     * <p>这个方法实现了"白名单"机制，对于公开访问的端点，
-     * 我们直接跳过JWT认证检查，提高系统性能。</p>
-     *
-     * @param requestURI 请求的URI路径
-     * @return 如果需要跳过认证返回true，否则返回false
-     */
-    private boolean shouldSkipAuthentication(String requestURI) {
-        // 检查是否是静态资源
-        if (requestURI.startsWith("/static/") ||
-                requestURI.startsWith("/public/") ||
-                requestURI.equals("/") ||
-                requestURI.equals("/favicon.ico")) {
-            return true;
-        }
-
-        // 检查是否在排除路径列表中
-        return EXCLUDED_PATHS.stream().anyMatch(requestURI::startsWith);
     }
 
     /**
@@ -238,7 +195,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private void authenticateUser(String jwt, HttpServletRequest request) {
         try {
             // 从JWT中提取用户ID
-            Long userId = jwtUtils.getUserIdFromToken(jwt);
+            Long userId = jwtTokenService.getUserIdFromToken(jwt);
             log.debug("从JWT中提取到用户ID: {}", userId);
 
             // 加载用户详细信息

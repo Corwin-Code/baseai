@@ -56,7 +56,6 @@ import java.util.List;
 @RequestMapping("/api/v1/chat")
 @Validated
 @Tag(name = "智能对话管理", description = "Chat Management APIs - 提供完整的AI驱动的智能对话解决方案")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class ChatController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);

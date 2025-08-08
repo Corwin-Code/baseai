@@ -1,9 +1,9 @@
 package com.cloud.baseai.adapter.web.auth;
 
+import com.cloud.baseai.infrastructure.exception.ApiResult;
 import com.cloud.baseai.infrastructure.security.UserPrincipal;
 import com.cloud.baseai.infrastructure.security.jwt.JwtUtils;
 import com.cloud.baseai.infrastructure.security.service.CustomUserDetailsService;
-import com.cloud.baseai.infrastructure.exception.ApiResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -54,7 +54,6 @@ import java.util.List;
 @RequestMapping("/api/v1/auth")
 @Validated
 @Tag(name = "用户认证", description = "Authentication APIs - 提供用户登录、注册、令牌管理等认证服务")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class AuthController {
 
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);

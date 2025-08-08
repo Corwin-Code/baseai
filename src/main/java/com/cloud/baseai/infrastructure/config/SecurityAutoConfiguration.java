@@ -1,9 +1,11 @@
 package com.cloud.baseai.infrastructure.config;
 
+import com.cloud.baseai.infrastructure.config.properties.SecurityProperties;
 import com.cloud.baseai.infrastructure.security.jwt.JwtAuthenticationEntryPoint;
 import com.cloud.baseai.infrastructure.security.jwt.JwtAuthenticationFilter;
 import com.cloud.baseai.infrastructure.security.permission.CustomPermissionEvaluator;
 import com.cloud.baseai.infrastructure.security.service.CustomUserDetailsService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -18,8 +20,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -55,21 +56,14 @@ import java.util.List;
         securedEnabled = true,        // 启用 @Secured
         jsr250Enabled = true          // 启用 @RolesAllowed
 )
+@RequiredArgsConstructor
 public class SecurityAutoConfiguration {
 
+    private final SecurityProperties securityProps;
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-
-
-    public SecurityAutoConfiguration(
-            CustomUserDetailsService userDetailsService,
-            JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
-            JwtAuthenticationFilter jwtAuthenticationFilter) {
-        this.userDetailsService = userDetailsService;
-        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-    }
+    private final CustomPermissionEvaluator customPermissionEvaluator;
 
     /**
      * 配置安全过滤器链
@@ -165,12 +159,16 @@ public class SecurityAutoConfiguration {
     /**
      * 密码编码器配置
      *
-     * <p>使用BCrypt算法，强度设置为12轮，在安全性和性能之间取得平衡。
-     * 生产环境建议使用更高的强度值。</p>
+     * <p>使用Argon2算法，比BCrypt更安全：</p>
+     * <ul>
+     * <li>抗GPU攻击</li>
+     * <li>内存硬化</li>
+     * <li>并行化抵抗</li>
+     * </ul>
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        return new Argon2PasswordEncoder(16, 32, 1, 4096, 3);
     }
 
     /**
@@ -191,13 +189,11 @@ public class SecurityAutoConfiguration {
      * 它会从数据库加载用户信息并验证密码。</p>
      */
     @Bean
-    public AuthenticationProvider authenticationProvider(
-            UserDetailsService userDetailsService,
-            PasswordEncoder passwordEncoder) {
+    public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder);
+        authProvider.setPasswordEncoder(passwordEncoder());
         // 隐藏用户不存在的异常，防止用户枚举攻击
-        authProvider.setHideUserNotFoundExceptions(false);
+        authProvider.setHideUserNotFoundExceptions(true);
         return authProvider;
     }
 
@@ -208,9 +204,9 @@ public class SecurityAutoConfiguration {
      * 比如 @PreAuthorize("hasPermission(#tenantId, 'TENANT', 'READ')")。</p>
      */
     @Bean
-    public static MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
+    public MethodSecurityExpressionHandler methodSecurityExpressionHandler() {
         DefaultMethodSecurityExpressionHandler expressionHandler = new DefaultMethodSecurityExpressionHandler();
-        expressionHandler.setPermissionEvaluator(new CustomPermissionEvaluator());
+        expressionHandler.setPermissionEvaluator(this.customPermissionEvaluator);
         return expressionHandler;
     }
 
@@ -225,20 +221,19 @@ public class SecurityAutoConfiguration {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // 允许的源域名（生产环境应该配置具体的域名）
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        configuration.setAllowedOriginPatterns(List.of(securityProps.getCors().getAllowedOrigins()));
 
         // 允许的HTTP方法
-        configuration.setAllowedMethods(Arrays.asList(
-                "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        configuration.setAllowedMethods(List.of(securityProps.getCors().getAllowedMethods()));
 
         // 允许的请求头
-        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowedHeaders(List.of(securityProps.getCors().getAllowedHeaders()));
 
         // 允许发送认证信息（如Cookies、Authorization头）
-        configuration.setAllowCredentials(true);
+        configuration.setAllowCredentials(securityProps.getCors().getAllowCredentials());
 
         // 预检请求的缓存时间
-        configuration.setMaxAge(3600L);
+        configuration.setMaxAge(securityProps.getCors().getMaxAge());
 
         // 暴露给前端的响应头
         configuration.setExposedHeaders(Arrays.asList(

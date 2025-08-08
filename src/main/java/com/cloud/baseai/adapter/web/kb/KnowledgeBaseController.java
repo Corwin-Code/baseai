@@ -51,7 +51,6 @@ import java.util.Set;
 @RequestMapping("/api/v1/kb")
 @Validated
 @Tag(name = "知识库管理", description = "Knowledge Base Management APIs - 提供完整的AI驱动的知识管理解决方案")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class KnowledgeBaseController {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseController.class);

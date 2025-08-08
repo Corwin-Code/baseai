@@ -56,7 +56,6 @@ import java.util.List;
 @RequestMapping("/api/v1/flows")
 @Validated
 @Tag(name = "流程编排管理", description = "Flow Orchestration APIs - 提供完整的可视化流程设计和执行解决方案")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class FlowOrchestrationController {
 
     private static final Logger log = LoggerFactory.getLogger(FlowOrchestrationController.class);
