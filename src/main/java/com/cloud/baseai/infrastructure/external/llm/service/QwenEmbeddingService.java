@@ -1,5 +1,7 @@
 package com.cloud.baseai.infrastructure.external.llm.service;
 
+import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingModel;
+import com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingOptions;
 import com.cloud.baseai.infrastructure.config.properties.KnowledgeBaseProperties;
 import com.cloud.baseai.infrastructure.config.properties.LlmProperties;
 import com.cloud.baseai.infrastructure.exception.ChatException;
@@ -12,10 +14,8 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
-import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -25,41 +25,33 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * <h2>OpenAI向量嵌入服务</h2>
+ * <h2>通义千问向量嵌入服务</h2>
  *
- * <p>基于Spring AI框架的OpenAI嵌入服务实现。该服务专注于将文本转换为高质量的向量表示，
- * 为RAG(检索增强生成)系统提供核心的语义理解能力。</p>
+ * <p>基于Spring AI Alibaba框架的通义千问向量化服务实现。该服务专门处理中文文本的向量化，
+ * 在中文语义理解方面具有显著优势，同时提供企业级的缓存、重试和监控功能。</p>
  *
- * <p><b>技术特点：</b></p>
+ * <p><b>通义千问嵌入特色：</b></p>
  * <ul>
- * <li><b>Spring AI集成：</b>充分利用Spring AI的抽象能力和生态系统</li>
- * <li><b>多模型支持：</b>支持OpenAI的多种嵌入模型，自动选择最优模型</li>
- * <li><b>智能缓存：</b>基于内容哈希的缓存机制，避免重复计算</li>
- * <li><b>批量优化：</b>支持批量处理，显著提升大量文本的处理效率</li>
- * <li><b>故障恢复：</b>内置重试机制和降级策略，保证服务稳定性</li>
- * </ul>
- *
- * <p><b>应用场景：</b></p>
- * <ul>
- * <li>知识库文档向量化</li>
- * <li>语义搜索和推荐</li>
- * <li>文本相似度计算</li>
- * <li>内容分类和聚类</li>
+ * <li><b>中文优化：</b>专门针对中文文本优化的向量表示，语义理解更准确</li>
+ * <li><b>多语言支持：</b>同时支持中英文等多种语言的高质量向量化</li>
+ * <li><b>成本优势：</b>相比国际模型具有显著的成本优势，适合大规模应用</li>
+ * <li><b>本土化服务：</b>国内部署，访问速度更快，数据更安全</li>
+ * <li><b>企业级功能：</b>内置缓存、重试、监控等生产环境必需功能</li>
  * </ul>
  */
 @Service
-public class OpenAIEmbeddingService implements EmbeddingService {
+public class QwenEmbeddingService implements EmbeddingService {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIEmbeddingService.class);
+    private static final Logger log = LoggerFactory.getLogger(QwenEmbeddingService.class);
 
     /**
-     * 支持的模型及其配置信息
+     * 支持的通义千问嵌入模型及其配置信息
      */
     private static final Map<String, ModelInfo> SUPPORTED_MODELS = initializeSupportedModels();
 
     private final LlmProperties llmProperties;
     private final KnowledgeBaseProperties kbProperties;
-    private final EmbeddingModel embeddingModel;
+    private final DashScopeEmbeddingModel embeddingModel;
 
     /**
      * 向量缓存，基于文本内容哈希
@@ -71,31 +63,30 @@ public class OpenAIEmbeddingService implements EmbeddingService {
      */
     private final Map<String, ModelStats> modelStatsMap = new ConcurrentHashMap<>();
 
-
     /**
-     * 构造函数，初始化OpenAI嵌入服务
+     * 构造函数，初始化通义千问嵌入服务
      *
      * @param llmProperties  LLM配置属性
      * @param kbProperties   知识库配置属性
-     * @param embeddingModel 嵌入模型
+     * @param embeddingModel DashScope嵌入模型
      */
-    public OpenAIEmbeddingService(LlmProperties llmProperties,
-                                  KnowledgeBaseProperties kbProperties,
-                                  EmbeddingModel embeddingModel) {
+    public QwenEmbeddingService(LlmProperties llmProperties,
+                                KnowledgeBaseProperties kbProperties,
+                                DashScopeEmbeddingModel embeddingModel) {
         this.llmProperties = llmProperties;
         this.kbProperties = kbProperties;
         this.embeddingModel = embeddingModel;
         this.vectorCache = createVectorCache();
 
-        log.info("OpenAI嵌入服务初始化完成: baseUrl={}, 默认模型={}, 缓存启用={}",
-                llmProperties.getOpenai().getBaseUrl(),
+        log.info("通义千问嵌入服务初始化完成: baseUrl={}, 默认模型={}, 缓存启用={}",
+                llmProperties.getQwen().getBaseUrl(),
                 kbProperties.getEmbedding().getDefaultModel(),
                 llmProperties.getFeatures().getEnableResponseCache());
     }
 
     @Override
     public float[] generateEmbedding(String text, String modelCode) {
-        // 输入验证
+        // 输入验证和清理
         String cleanedText = KbUtils.cleanText(text);
         String validatedModel = getValidatedModel(modelCode);
 
@@ -107,7 +98,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             String cacheKey = generateCacheKey(cleanedText, validatedModel);
             float[] cached = vectorCache.getIfPresent(cacheKey);
             if (cached != null) {
-                log.debug("向量缓存命中: model={}, textLength={}", validatedModel, cleanedText.length());
+                log.debug("通义千问向量缓存命中: model={}, textLength={}", validatedModel, cleanedText.length());
                 return cached;
             }
         }
@@ -134,13 +125,13 @@ public class OpenAIEmbeddingService implements EmbeddingService {
                 vectorCache.put(cacheKey, embedding);
             }
 
-            log.debug("向量生成完成: model={}, dimension={}, latency={}ms",
+            log.debug("通义千问向量生成完成: model={}, dimension={}, latency={}ms",
                     validatedModel, embedding.length, latency);
 
             return embedding;
 
         } catch (Exception e) {
-            log.error("向量生成失败: model={}, textLength={}, error={}",
+            log.error("通义千问向量生成失败: model={}, textLength={}, error={}",
                     validatedModel, cleanedText.length(), e.getMessage());
             throw convertException(e, validatedModel);
         }
@@ -184,13 +175,13 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             int tokenCount = estimateTokenCount(cleanedText, validatedModel);
             double cost = calculateCost(validatedModel, tokenCount);
 
-            log.debug("向量生成详情: model={}, tokens={}, latency={}ms, cost=${}",
+            log.debug("通义千问向量生成详情: model={}, tokens={}, latency={}ms, cost=¥{}",
                     validatedModel, tokenCount, latencyMs, cost);
 
-            return EmbeddingResult.success(embedding, validatedModel, tokenCount, latencyMs, cost, "openai");
+            return EmbeddingResult.success(embedding, validatedModel, tokenCount, latencyMs, cost, "qwen");
 
         } catch (Exception e) {
-            log.error("详细向量生成失败: model={}, error={}", validatedModel, e.getMessage());
+            log.error("通义千问详细向量生成失败: model={}, error={}", validatedModel, e.getMessage());
             throw convertException(e, validatedModel);
         }
     }
@@ -222,16 +213,16 @@ public class OpenAIEmbeddingService implements EmbeddingService {
                 double cost = calculateCost(validatedModel, tokenCount);
 
                 results.add(EmbeddingResult.success(embedding, validatedModel, tokenCount,
-                        avgLatencyMs, cost, "openai"));
+                        avgLatencyMs, cost, "qwen"));
             }
 
-            log.info("批量向量生成完成: model={}, count={}, totalLatency={}ms",
+            log.info("通义千问批量向量生成完成: model={}, count={}, totalLatency={}ms",
                     validatedModel, texts.size(), totalLatencyMs);
 
             return results;
 
         } catch (Exception e) {
-            log.error("批量详细向量生成失败: model={}, count={}, error={}",
+            log.error("通义千问批量详细向量生成失败: model={}, count={}, error={}",
                     validatedModel, texts.size(), e.getMessage());
             throw convertException(e, validatedModel);
         }
@@ -249,7 +240,8 @@ public class OpenAIEmbeddingService implements EmbeddingService {
         }
 
         // 检查是否在配置的模型列表中
-        return llmProperties.getOpenai().getModels().contains(modelCode);
+        return llmProperties.getQwen().getEnabled() &&
+                llmProperties.getQwen().getModels().contains(modelCode);
     }
 
     @Override
@@ -281,7 +273,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
 
     @Override
     public List<String> getSupportedModels() {
-        return llmProperties.getOpenai().getModels().stream()
+        return llmProperties.getQwen().getModels().stream()
                 .filter(SUPPORTED_MODELS::containsKey)
                 .toList();
     }
@@ -291,7 +283,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
         try {
             // 使用最基础的模型进行健康检查
             String testText = "健康检查测试";
-            String testModel = "text-embedding-3-small";
+            String testModel = "text-embedding-v2";
 
             if (!isModelAvailable(testModel)) {
                 testModel = getSupportedModels().stream()
@@ -308,7 +300,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             return true;
 
         } catch (Exception e) {
-            log.warn("OpenAI嵌入服务健康检查失败: {}", e.getMessage());
+            log.warn("通义千问嵌入服务健康检查失败: {}", e.getMessage());
             return false;
         }
     }
@@ -316,16 +308,16 @@ public class OpenAIEmbeddingService implements EmbeddingService {
     @Override
     public boolean warmupModel(String modelCode) {
         try {
-            log.info("开始预热模型: {}", modelCode);
+            log.info("开始预热通义千问模型: {}", modelCode);
 
-            String warmupText = "This is a warmup text for model initialization.";
+            String warmupText = "这是一个模型预热文本，用于初始化服务。";
             generateEmbedding(warmupText, modelCode);
 
-            log.info("模型预热成功: {}", modelCode);
+            log.info("通义千问模型预热成功: {}", modelCode);
             return true;
 
         } catch (Exception e) {
-            log.warn("模型预热失败: model={}, error={}", modelCode, e.getMessage());
+            log.warn("通义千问模型预热失败: model={}, error={}", modelCode, e.getMessage());
             return false;
         }
     }
@@ -337,7 +329,6 @@ public class OpenAIEmbeddingService implements EmbeddingService {
         }
 
         String language = KbUtils.detectLanguage(text);
-
         return KbUtils.estimateTokenCount(text, language);
     }
 
@@ -365,14 +356,14 @@ public class OpenAIEmbeddingService implements EmbeddingService {
      */
     private String getValidatedModel(String modelCode) {
         if (modelCode == null || modelCode.trim().isEmpty()) {
-            String defaultModel = kbProperties.getEmbedding().getDefaultModel();
-            log.debug("使用默认嵌入模型: {}", defaultModel);
+            String defaultModel = getDefaultQwenEmbeddingModel();
+            log.debug("使用默认通义千问嵌入模型: {}", defaultModel);
             return defaultModel;
         }
 
         if (!isModelAvailable(modelCode)) {
             // 尝试使用备用模型
-            List<String> fallbackModels = kbProperties.getEmbedding().getFallbackModels();
+            List<String> fallbackModels = getQwenFallbackModels();
             for (String fallback : fallbackModels) {
                 if (isModelAvailable(fallback)) {
                     log.warn("指定模型不可用，使用备用模型: {} -> {}", modelCode, fallback);
@@ -384,6 +375,27 @@ public class OpenAIEmbeddingService implements EmbeddingService {
         }
 
         return modelCode;
+    }
+
+    /**
+     * 获取默认的通义千问嵌入模型
+     */
+    private String getDefaultQwenEmbeddingModel() {
+        // 首先检查配置的默认模型是否为通义千问模型
+        String defaultModel = kbProperties.getEmbedding().getDefaultModel();
+        if (defaultModel.startsWith("text-embedding-v") && isModelAvailable(defaultModel)) {
+            return defaultModel;
+        }
+
+        // 否则使用通义千问的默认模型
+        return "text-embedding-v2";
+    }
+
+    /**
+     * 获取通义千问备用模型列表
+     */
+    private List<String> getQwenFallbackModels() {
+        return List.of("text-embedding-v2", "text-embedding-v3");
     }
 
     /**
@@ -402,8 +414,9 @@ public class OpenAIEmbeddingService implements EmbeddingService {
      * 创建嵌入请求
      */
     private EmbeddingRequest createEmbeddingRequest(String text, String modelCode) {
-        OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
-                .model(modelCode)
+        DashScopeEmbeddingOptions options = DashScopeEmbeddingOptions.builder()
+                .withModel(modelCode)
+                .withDimensions(getVectorDimension(modelCode))
                 .build();
 
         return new EmbeddingRequest(List.of(text), options);
@@ -413,8 +426,9 @@ public class OpenAIEmbeddingService implements EmbeddingService {
      * 创建批量嵌入请求
      */
     private EmbeddingRequest createBatchEmbeddingRequest(List<String> texts, String modelCode) {
-        OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
-                .model(modelCode)
+        DashScopeEmbeddingOptions options = DashScopeEmbeddingOptions.builder()
+                .withModel(modelCode)
+                .withDimensions(getVectorDimension(modelCode))
                 .build();
 
         return new EmbeddingRequest(texts, options);
@@ -487,7 +501,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
                 }
             }
 
-            log.debug("缓存命中率: {}/{}", texts.size() - uncachedTexts.size(), texts.size());
+            log.debug("通义千问缓存命中率: {}/{}", texts.size() - uncachedTexts.size(), texts.size());
         } else {
             uncachedIndices.addAll(java.util.stream.IntStream.range(0, texts.size()).boxed().toList());
             uncachedTexts.addAll(texts);
@@ -518,11 +532,11 @@ public class OpenAIEmbeddingService implements EmbeddingService {
                 long latency = System.currentTimeMillis() - startTime;
                 updateModelStats(modelCode, uncachedTexts.size(), latency);
 
-                log.debug("批量向量生成完成: model={}, processed={}, latency={}ms",
+                log.debug("通义千问批量向量生成完成: model={}, processed={}, latency={}ms",
                         modelCode, uncachedTexts.size(), latency);
 
             } catch (Exception e) {
-                log.error("批量向量生成失败: model={}, count={}, error={}",
+                log.error("通义千问批量向量生成失败: model={}, count={}, error={}",
                         modelCode, uncachedTexts.size(), e.getMessage());
                 throw convertException(e, modelCode);
             }
@@ -542,7 +556,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             int end = Math.min(i + batchSize, texts.size());
             List<String> batch = texts.subList(i, end);
 
-            log.debug("处理批次: {}-{}/{}", i + 1, end, texts.size());
+            log.debug("处理通义千问批次: {}-{}/{}", i + 1, end, texts.size());
 
             List<String> cleanedBatch = batch.stream()
                     .map(KbUtils::cleanText)
@@ -554,7 +568,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             // 批次间短暂延迟，避免触发限流
             if (i + batchSize < texts.size()) {
                 try {
-                    Thread.sleep(100); // 100ms延迟
+                    Thread.sleep(200); // 200ms延迟，通义千问限流相对宽松
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new ChatException(ErrorCode.EXT_EMB_009, e);
@@ -562,7 +576,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
             }
         }
 
-        log.info("分批处理完成: totalTexts={}, batches={}", texts.size(),
+        log.info("通义千问分批处理完成: totalTexts={}, batches={}", texts.size(),
                 (texts.size() + batchSize - 1) / batchSize);
 
         return allResults;
@@ -574,12 +588,12 @@ public class OpenAIEmbeddingService implements EmbeddingService {
     private String generateCacheKey(String text, String modelCode) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            String combined = modelCode + ":" + text;
+            String combined = "qwen:" + modelCode + ":" + text;
             byte[] hash = digest.digest(combined.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(hash);
         } catch (Exception e) {
             // 如果哈希失败，使用简单的字符串组合
-            return modelCode + ":" + text.hashCode();
+            return "qwen:" + modelCode + ":" + text.hashCode();
         }
     }
 
@@ -605,18 +619,18 @@ public class OpenAIEmbeddingService implements EmbeddingService {
 
         String message = e.getMessage();
         if (message != null) {
-            if (message.contains("401") || message.contains("Unauthorized")) {
+            if (message.contains("401") || message.contains("Unauthorized") || message.contains("Invalid API")) {
                 return new ChatException(ErrorCode.EXT_AI_008, e);
-            } else if (message.contains("429") || message.contains("Rate limit")) {
+            } else if (message.contains("429") || message.contains("Rate limit") || message.contains("Throttling")) {
                 return new ChatException(ErrorCode.EXT_AI_007, e);
-            } else if (message.contains("timeout") || message.contains("Timeout")) {
+            } else if (message.contains("timeout") || message.contains("Timeout") || message.contains("连接超时")) {
                 return new ChatException(ErrorCode.EXT_AI_003, e);
-            } else if (message.contains("quota") || message.contains("insufficient")) {
+            } else if (message.contains("quota") || message.contains("insufficient") || message.contains("余额不足")) {
                 return new ChatException(ErrorCode.EXT_AI_004, e);
             }
         }
 
-        return new ChatException(ErrorCode.EXT_EMB_010, modelCode, e);
+        return new ChatException(ErrorCode.EXT_EMB_011, modelCode, e);
     }
 
     /**
@@ -682,21 +696,15 @@ public class OpenAIEmbeddingService implements EmbeddingService {
     private static Map<String, ModelInfo> initializeSupportedModels() {
         Map<String, ModelInfo> models = new HashMap<>();
 
-        // OpenAI最新嵌入模型
-        models.put("text-embedding-3-small", ModelInfo.create(
-                "text-embedding-3-small", "openai", 1536, 8192, 0.00002,
-                "OpenAI第三代小型嵌入模型，性价比极高，适合大规模应用"
+        // 通义千问嵌入模型
+        models.put("text-embedding-v2", ModelInfo.create(
+                "text-embedding-v2", "qwen", 1536, 2048, 0.0007,
+                "通义千问第二代文本嵌入模型，中文优化，性价比高"
         ));
 
-        models.put("text-embedding-3-large", ModelInfo.create(
-                "text-embedding-3-large", "openai", 3072, 8192, 0.00013,
-                "OpenAI第三代大型嵌入模型，更高的向量维度，更强的语义表达能力"
-        ));
-
-        // 经典ada-002模型
-        models.put("text-embedding-ada-002", ModelInfo.create(
-                "text-embedding-ada-002", "openai", 1536, 8192, 0.0001,
-                "OpenAI经典嵌入模型，稳定可靠，广泛验证"
+        models.put("text-embedding-v3", ModelInfo.create(
+                "text-embedding-v3", "qwen", 1536, 8192, 0.0007,
+                "通义千问第三代文本嵌入模型，支持更长文本，语义理解更准确"
         ));
 
         return models;

@@ -40,10 +40,10 @@ spring:
     # 关闭 Open-In-View，避免懒加载问题
     open-in-view: false
     # 是否在控制台打印 SQL
-    show-sql: ${JPA_SHOW_SQL:false}
+    show-sql: ${JPA_SHOW_SQL:true}
     hibernate:
-      # 生产环境使用 validate，开发环境可以使用 update
-      ddl-auto: ${JPA_DDL_AUTO:validate}
+      # 生产环境使用 validate，开发环境可以使用 update(自动更新表结构)
+      ddl-auto: ${JPA_DDL_AUTO:update}
       # 使用下划线命名策略，符合数据库命名规范
       naming:
         physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
@@ -204,6 +204,8 @@ logging:
     org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
     org.springframework.cache: DEBUG
+    com.alibaba.cloud.ai: INFO
+    org.springframework.ai: INFO
     # Spring 调度相关日志
     org.springframework.scheduling: INFO
   pattern:
@@ -384,16 +386,25 @@ baseai:
       # 备用模型列表，当主模型不可用时使用
       fallback-models:
         - text-embedding-ada-002
+        - text-embedding-v2
       # 模型能力配置，用于智能选择模型
       model-capabilities:
         text-embedding-3-small:
           max-tokens: 8191
           dimension: 1536
           cost-per-token: 0.00002
+        text-embedding-3-large:
+          max-tokens: 8191
+          dimension: 3072
+          cost-per-token: 0.00013
         text-embedding-ada-002:
           max-tokens: 8191
           dimension: 1536
           cost-per-token: 0.0001
+        text-embedding-v2:
+          max-tokens: 2048
+          dimension: 1536
+          cost-per-token: 0.0007
 
     # 向量搜索配置
     search:
@@ -497,56 +508,61 @@ baseai:
 
   # ========== 大语言模型服务配置 ==========
   llm:
-    # 默认服务提供商
+    # 默认服务提供商 (openai/claude/qwen)
     default-provider: ${LLM_DEFAULT_PROVIDER:openai}
-    # 是否启用故障转移
+    # 是否启用故障转移 - 当主要服务不可用时自动切换
     failover-enabled: ${LLM_FAILOVER_ENABLED:true}
-    # 负载均衡策略：round_robin、random、weighted
+    # 负载均衡策略：round_robin(轮询)、random(随机)、weighted(权重)
     load-balancing: ${LLM_LOAD_BALANCING:round_robin}
 
     # OpenAI 配置
     openai:
       enabled: ${LLM_OPENAI_ENABLED:true}
-      # API基础URL，支持代理服务
+      # API基础URL，支持代理服务 (国内可用的代理地址)
       base-url: ${LLM_OPENAI_BASE_URL:https://api.openai-hk.com}
-      # API密钥
+      # API密钥 (请替换为您的真实密钥)
       api-key: ${LLM_OPENAI_API_KEY:hk-5y2tsx100002516783d25a5427af18502616fb030a23be51}
-      # 组织ID（可选）
+      # 组织ID（可选，企业用户需要）
       organization: ${LLM_OPENAI_ORG_ID:}
-      # 请求超时时间
+      # 请求超时时间 (ISO-8601格式，PT2M表示2分钟)
       timeout: ${LLM_OPENAI_TIMEOUT:PT2M}
       # 最大重试次数
       max-retries: ${LLM_OPENAI_MAX_RETRIES:3}
       # 支持的模型列表
       models:
-        - gpt-4
-        - gpt-4-turbo
-        - gpt-3.5-turbo
-        - text-embedding-3-small
-        - text-embedding-3-large
+        - gpt-4o                    # 最新多模态模型
+        - gpt-4o-mini              # 轻量版GPT-4
+        - gpt-4-turbo              # GPT-4加速版
+        - gpt-4                    # 经典GPT-4
+        - gpt-3.5-turbo            # 性价比之王
+        - text-embedding-3-small   # 向量化模型(小)
+        - text-embedding-3-large   # 向量化模型(大)
 
-    # Claude 配置
-    claude:
-      enabled: ${LLM_CLAUDE_ENABLED:false}
-      # Claude API密钥
-      api-key: ${LLM_CLAUDE_API_KEY:}
-      # API基础URL
-      base-url: ${LLM_CLAUDE_BASE_URL:https://api.anthropic.com}
-      # 请求超时时间
-      timeout: ${LLM_CLAUDE_TIMEOUT:PT3M}
+    # Anthropic Claude 配置
+    anthropic:
+      enabled: ${LLM_ANTHROPIC_ENABLED:false}
+      # Anthropic Claude API密钥 (需要到Anthropic官网申请)
+      api-key: ${LLM_ANTHROPIC_API_KEY:}
+      # API基础URL (官方地址)
+      base-url: ${LLM_ANTHROPIC_BASE_URL:https://api.anthropic.com}
+      # 请求超时时间 (Anthropic Claude响应较慢，建议3分钟)
+      timeout: ${LLM_ANTHROPIC_TIMEOUT:PT3M}
       # 最大重试次数
-      max-retries: ${LLM_CLAUDE_MAX_RETRIES:2}
+      max-retries: ${LLM_ANTHROPIC_MAX_RETRIES:2}
       # 支持的模型列表
       models:
-        - claude-3-sonnet-20240229
-        - claude-3-haiku-20240307
+        - claude-3-haiku-20240307     # 最快速度，最低成本
+        - claude-3-sonnet-20240229    # 平衡性能与速度
+        - claude-3-opus-20240229      # 最高性能
+        - claude-3-5-sonnet-20241022  # 最新版本
+        - claude-3-5-sonnet-20240620  # 稳定版本
 
     # 阿里云通义千问 (Qwen) 配置
     qwen:
       enabled: ${LLM_QWEN_ENABLED:true}
-      # API基础URL，通义千问的服务地址
+      # API基础URL，通义千问的DashScope服务地址
       base-url: ${LLM_QWEN_BASE_URL:https://dashscope.aliyuncs.com}
-      # API密钥
+      # API密钥 (请到阿里云控制台获取)
       api-key: ${LLM_QWEN_API_KEY:sk-xxxxxxxxxxxxxxxxxxxxxxxx}
       # 请求超时时间
       timeout: ${LLM_QWEN_TIMEOUT:PT2M}
@@ -554,51 +570,84 @@ baseai:
       max-retries: ${LLM_QWEN_MAX_RETRIES:3}
       # 支持的模型列表
       models:
-        # 主力模型，性能和效果均衡
-        - qwen-plus
-        # 速度优化模型
-        - qwen-turbo
-        # 最高性能模型
-        - qwen-max
-        # 长文本优化模型
-        - qwen-max-longcontext
-        # 文本嵌入/向量化模型
-        - text-embedding-v2
+        # 主力聊天模型
+        - qwen-plus                  # 推荐：性能与成本平衡
+        - qwen-turbo                 # 高速响应，成本最低
+        - qwen-max                   # 最强性能，复杂任务首选
+        - qwen-max-longcontext       # 长文本处理专用
+
+        # 专业模型
+        - qwen-coder                 # 代码生成和理解
+        - qwen-math                  # 数学推理专用
+
+        # 多模态模型
+        - qwen-vl-plus              # 图像理解
+        - qwen-vl-max               # 高级视觉理解
+
+        # 向量化模型
+        - text-embedding-v2          # 文本向量化
+        - text-embedding-v3          # 新版向量化
 
     # 默认模型参数
     default-parameters:
       # 默认使用的模型
       model: ${LLM_DEFAULT_MODEL:gpt-3.5-turbo}
-      # 温度参数，控制回答的随机性
+      # 温度参数，控制回答的创造性 (0.0-2.0，越高越有创意)
       temperature: ${LLM_DEFAULT_TEMPERATURE:0.7}
       # 最大生成令牌数
       max-tokens: ${LLM_DEFAULT_MAX_TOKENS:1000}
-      # Top-p 采样参数
+      # Top-p 采样参数 (0.0-1.0，控制候选词范围)
       top-p: ${LLM_DEFAULT_TOP_P:1.0}
-      # 频率惩罚参数
+      # 频率惩罚参数 (减少重复内容)
       frequency-penalty: ${LLM_DEFAULT_FREQ_PENALTY:0.0}
-      # 存在惩罚参数
+      # 存在惩罚参数 (鼓励谈论新话题)
       presence-penalty: ${LLM_DEFAULT_PRES_PENALTY:0.0}
 
     # 模型特定参数
     model-specific-parameters:
+      # GPT-4: 温度稍低，确保准确性
       'gpt-4':
         temperature: 0.5
         max-tokens: 2000
+      # GPT-3.5: 默认平衡设置
       '[gpt-3.5-turbo]':
         temperature: 0.7
         max-tokens: 1000
+      # 通义千问Plus: 平衡设置
+      'qwen-plus':
+        temperature: 0.7
+        max-tokens: 2000
+      # 通义千问Max: 低温度，确保质量
+      'qwen-max':
+        temperature: 0.5
+        max-tokens: 4000
+      # 代码模型: 极低温度，确保准确性
+      'qwen-coder':
+        temperature: 0.2
+        max-tokens: 4000
+      'claude-3-haiku-20240307':
+        temperature: 0.7
+        max-tokens: 4000
       'claude-3-sonnet-20240229':
         temperature: 0.6
-        max-tokens: 1500
+        max-tokens: 4000
+      'claude-3-opus-20240229':
+        temperature: 0.5
+        max-tokens: 4000
+      'claude-3-5-sonnet-20241022':
+        temperature: 0.6
+        max-tokens: 8000
+      'claude-3-5-sonnet-20240620':
+        temperature: 0.6
+        max-tokens: 8000
 
     # 高级功能配置
     features:
-      # 是否启用流式响应
+      # 是否启用流式响应 (提供更好的用户体验)
       enable-streaming: ${LLM_ENABLE_STREAMING:true}
-      # 是否启用函数调用
+      # 是否启用函数调用 (Agent功能必需)
       enable-function-calling: ${LLM_ENABLE_FUNCTIONS:true}
-      # 是否启用响应缓存
+      # 是否启用响应缓存 (提高性能，降低成本)
       enable-response-cache: ${LLM_ENABLE_CACHE:true}
       # 响应缓存时间（秒）
       response-cache-ttl: ${LLM_CACHE_TTL:3600}

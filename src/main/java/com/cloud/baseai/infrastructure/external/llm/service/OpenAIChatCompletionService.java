@@ -116,20 +116,20 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
                             .doOnNext(onChunk)
                             .doOnError(error -> {
                                 log.error("流式响应处理错误", error);
-                                throw new ChatException(ErrorCode.EXT_AI_021, error);
+                                throw new ChatException(ErrorCode.EXT_OPENAI_005, error);
                             })
                             .doOnComplete(() -> log.debug("流式响应完成"))
                             .subscribe();
 
                 } catch (Exception e) {
                     log.error("流式响应处理失败", e);
-                    throw new ChatException(ErrorCode.EXT_AI_022, e);
+                    throw new ChatException(ErrorCode.EXT_OPENAI_006, e);
                 }
             });
 
         } catch (Exception e) {
             log.error("OpenAI流式生成异常", e);
-            throw new ChatException(ErrorCode.EXT_AI_022, e);
+            throw new ChatException(ErrorCode.EXT_OPENAI_006, e);
         }
     }
 
@@ -338,7 +338,7 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
      */
     private ChatCompletionResult processResponse(ChatResponse response, long startTime, Map<String, Object> context) {
         if (response == null) {
-            throw new ChatException(ErrorCode.EXT_AI_008);
+            throw new ChatException(ErrorCode.EXT_OPENAI_001);
         } else {
             response.getResult();
         }
@@ -396,7 +396,7 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
         // 根据不同的异常类型返回相应的错误码
         if (e.getMessage() != null) {
             if (e.getMessage().contains("401") || e.getMessage().contains("Unauthorized")) {
-                return new ChatException(ErrorCode.EXT_AI_001, e);
+                return new ChatException(ErrorCode.EXT_AI_008, e);
             } else if (e.getMessage().contains("429") || e.getMessage().contains("Rate limit")) {
                 return new ChatException(ErrorCode.EXT_AI_007, e);
             } else if (e.getMessage().contains("timeout") || e.getMessage().contains("Timeout")) {
@@ -404,7 +404,7 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
             }
         }
 
-        return new ChatException(ErrorCode.EXT_AI_020, e);
+        return new ChatException(ErrorCode.EXT_OPENAI_004, e);
     }
 
     /**

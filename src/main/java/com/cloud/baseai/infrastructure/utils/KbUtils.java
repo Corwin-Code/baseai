@@ -1,5 +1,6 @@
 package com.cloud.baseai.infrastructure.utils;
 
+import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,6 +9,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -101,7 +103,7 @@ public class KbUtils {
     /**
      * 估算文本的Token数量
      *
-     * <p>这是一个简化的估算方法，实际生产环境建议使用专业的Token计算库。</p>
+     * <p>使用简化的算法估算token数量，实际生产环境建议使用专业的Token计算库。</p>
      *
      * @param text     文本内容
      * @param langCode 语言代码
@@ -382,5 +384,106 @@ public class KbUtils {
             return false;
         }
         return str1.equals(str2);
+    }
+
+    // =================== 限流器和带重试的执行器 ===================
+
+    /**
+     * 创建限流器
+     *
+     * @param requestsPerMinute 每分钟请求数
+     * @return 限流器实例
+     */
+    public static RateLimiter createRateLimiter(int requestsPerMinute) {
+        if (requestsPerMinute <= 0) {
+            requestsPerMinute = 60; // 默认值
+        }
+
+        double permitsPerSecond = requestsPerMinute / 60.0;
+        return RateLimiter.create(permitsPerSecond);
+    }
+
+    /**
+     * 带重试的执行器
+     *
+     * <p>这就像是一个耐心的助手，当第一次尝试失败时，它会稍等片刻再试一次，
+     * 而不是立即放弃。这种策略在网络不稳定的环境中特别有用。</p>
+     */
+    public static <T> T executeWithRetry(
+            Supplier<T> operation,
+            int maxAttempts,
+            long initialDelayMs,
+            double multiplier,
+            long maxDelayMs,
+            String operationName) {
+
+        Exception lastException = null;
+        long currentDelay = initialDelayMs;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return operation.get();
+            } catch (Exception e) {
+                lastException = e;
+
+                if (attempt == maxAttempts) {
+                    log.error("操作失败，已达最大重试次数: {} ({}次尝试)", operationName, maxAttempts, e);
+                    break;
+                }
+
+                if (!shouldRetry(e)) {
+                    log.warn("遇到不可重试的异常: {}", operationName, e);
+                    break;
+                }
+
+                log.warn("操作失败，将在{}ms后重试: {} (第{}次尝试)",
+                        currentDelay, operationName, attempt, e);
+
+                try {
+                    Thread.sleep(currentDelay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("重试过程被中断", ie);
+                }
+
+                currentDelay = Math.min((long) (currentDelay * multiplier), maxDelayMs);
+            }
+        }
+
+        throw new RuntimeException("操作失败: " + operationName, lastException);
+    }
+
+    /**
+     * 判断异常是否应该重试
+     */
+    private static boolean shouldRetry(Exception e) {
+        String message = e.getMessage();
+        if (message == null) {
+            return false;
+        }
+
+        // 网络相关错误通常可以重试
+        if (message.contains("timeout") ||
+                message.contains("connection") ||
+                message.contains("socket")) {
+            return true;
+        }
+
+        // HTTP 5xx 错误可以重试
+        if (message.contains("500") ||
+                message.contains("502") ||
+                message.contains("503") ||
+                message.contains("504")) {
+            return true;
+        }
+
+        // 限流错误可以重试
+        if (message.contains("429") ||
+                message.contains("rate limit") ||
+                message.contains("too many requests")) {
+            return true;
+        }
+
+        return false;
     }
 }

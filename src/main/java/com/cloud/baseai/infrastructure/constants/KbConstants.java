@@ -24,8 +24,8 @@ public final class KbConstants {
         public static final String TEXT = "txt";
         public static final String RTF = "rtf";
         public static final String HTML = "html";
-        public static final String CSV = "csv";
         public static final String JSON = "json";
+        public static final String XML = "xml";
     }
 
     /**
@@ -39,7 +39,8 @@ public final class KbConstants {
         public static final String APPLICATION_MSWORD = "application/msword";
         public static final String APPLICATION_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         public static final String APPLICATION_JSON = "application/json";
-        public static final String TEXT_CSV = "text/csv";
+        public static final String APPLICATION_RTF = "application/rtf";
+        public static final String APPLICATION_XML = "application/xml";
     }
 
     /**
@@ -64,18 +65,25 @@ public final class KbConstants {
      * 向量模型常量
      */
     public static final class VectorModels {
+        // OpenAI嵌入模型
+        public static final String TEXT_EMBEDDING_ADA_002 = "text-embedding-ada-002";
         public static final String TEXT_EMBEDDING_3_SMALL = "text-embedding-3-small";
         public static final String TEXT_EMBEDDING_3_LARGE = "text-embedding-3-large";
-        public static final String TEXT_EMBEDDING_ADA_002 = "text-embedding-ada-002";
+
+        // 通义千问嵌入模型
+        public static final String TEXT_EMBEDDING_V2 = "text-embedding-v2";
+        public static final String TEXT_EMBEDDING_V3 = "text-embedding-v3";
     }
 
     /**
      * 向量维度常量
      */
     public static final class VectorDimensions {
+        public static final int TEXT_EMBEDDING_ADA_002 = 1536;
         public static final int TEXT_EMBEDDING_3_SMALL = 1536;
         public static final int TEXT_EMBEDDING_3_LARGE = 3072;
-        public static final int TEXT_EMBEDDING_ADA_002 = 1536;
+        public static final int TEXT_EMBEDDING_V2 = 1536;
+        public static final int TEXT_EMBEDDING_V3 = 1536;
     }
 
     /**
@@ -115,9 +123,13 @@ public final class KbConstants {
      * 搜索限制常量
      */
     public static final class SearchLimits {
+        public static final double DEFAULT_SIMILARITY_THRESHOLD = 0.7;
+        public static final double MIN_SIMILARITY_THRESHOLD = 0.0;
+        public static final double MAX_SIMILARITY_THRESHOLD = 1.0;
         public static final int DEFAULT_TOP_K = 10;
         public static final int MAX_TOP_K = 100;
         public static final int MIN_TOP_K = 1;
+
         public static final int DEFAULT_PAGE_SIZE = 20;
         public static final int MAX_PAGE_SIZE = 100;
         public static final int MAX_HIGHLIGHTS = 5;
@@ -130,9 +142,9 @@ public final class KbConstants {
      * 分块相关常量
      */
     public static final class ChunkLimits {
-        public static final int DEFAULT_SIZE = 1000;
-        public static final int MIN_SIZE = 100;
-        public static final int MAX_SIZE = 4000;
+        public static final int DEFAULT_CHUNK_SIZE  = 1000;
+        public static final int MIN_CHUNK_SIZE  = 100;
+        public static final int MAX_CHUNK_SIZE  = 4000;
         public static final int DEFAULT_OVERLAP = 200;
         public static final int MIN_OVERLAP = 0;
         public static final int MAX_OVERLAP = 500;

@@ -11,7 +11,7 @@ import java.util.Map;
  * <h2>大语言模型服务配置属性类</h2>
  *
  * <p>该类管理与大语言模型相关的所有配置，支持多个服务提供商，
- * 包括OpenAI、Claude等，并提供负载均衡和故障转移功能。</p>
+ * 包括OpenAI、Claude、通义千问等，并提供负载均衡和故障转移功能。</p>
  */
 @Data
 @ConfigurationProperties(prefix = "baseai.llm")
@@ -38,9 +38,9 @@ public class LlmProperties {
     private OpenAiProperties openai = new OpenAiProperties();
 
     /**
-     * Claude配置
+     * Anthropic Claude配置
      */
-    private ClaudeProperties claude = new ClaudeProperties();
+    private AnthropicProperties anthropic = new AnthropicProperties();
 
     /**
      * Qwen配置
@@ -58,7 +58,9 @@ public class LlmProperties {
     private Map<String, ModelParameters> modelSpecificParameters = Map.of(
             "gpt-4", new ModelParameters(0.5, 2000),
             "gpt-3.5-turbo", new ModelParameters(0.7, 1000),
-            "claude-3-sonnet-20240229", new ModelParameters(0.6, 1500)
+            "claude-3-sonnet-20240229", new ModelParameters(0.6, 1500),
+            "qwen-plus", new ModelParameters(0.7, 2000),
+            "qwen-max", new ModelParameters(0.5, 4000)
     );
 
     /**
@@ -111,17 +113,17 @@ public class LlmProperties {
     }
 
     /**
-     * Claude配置内部类
+     * Anthropic Claude配置内部类
      */
     @Data
-    public static class ClaudeProperties {
+    public static class AnthropicProperties {
         /**
-         * 是否启用Claude服务
+         * 是否启用Anthropic Claude服务
          */
         private Boolean enabled = false;
 
         /**
-         * Claude API密钥
+         * Anthropic Claude API密钥
          */
         private String apiKey = "";
 
@@ -144,7 +146,11 @@ public class LlmProperties {
          * 支持的模型列表
          */
         private List<String> models = List.of(
-                "claude-3-sonnet-20240229", "claude-3-haiku-20240307"
+                "claude-3-haiku-20240307",
+                "claude-3-sonnet-20240229",
+                "claude-3-opus-20240229",
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-sonnet-20240620"
         );
     }
 
@@ -183,7 +189,9 @@ public class LlmProperties {
          */
         private List<String> models = List.of(
                 "qwen-plus", "qwen-turbo", "qwen-max",
-                "qwen-max-longcontext", "text-embedding-v2"
+                "qwen-max-longcontext", "qwen-coder", "qwen-math",
+                "qwen-vl-plus", "qwen-vl-max",
+                "text-embedding-v2", "text-embedding-v3"
         );
     }
 

@@ -144,7 +144,7 @@ public class ChatHealthIndicator implements HealthIndicator {
             if (isHealthy && responseTime <= MAX_RESPONSE_TIME_MS) {
                 return HealthCheckResult.healthy("LLM服务正常")
                         .withDetail("response_time_ms", responseTime)
-                        .withDetail("supported_models", chatModelFactory.getAllSupportedModels().size());
+                        .withDetail("supported_models", chatModelFactory.getSupportedModels().size());
             } else {
                 String reason = !isHealthy ? "LLM服务不可用" : "响应时间过长: " + responseTime + "ms";
                 return HealthCheckResult.unhealthy(reason)

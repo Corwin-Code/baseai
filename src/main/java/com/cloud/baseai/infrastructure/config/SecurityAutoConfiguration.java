@@ -18,6 +18,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -68,17 +69,6 @@ public class SecurityAutoConfiguration {
         this.userDetailsService = userDetailsService;
         this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-    }
-
-    /**
-     * 密码编码器配置
-     *
-     * <p>使用BCrypt算法，强度设置为12轮，在安全性和性能之间取得平衡。
-     * 生产环境建议使用更高的强度值。</p>
-     */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
     }
 
     /**
@@ -166,10 +156,21 @@ public class SecurityAutoConfiguration {
                         .anyRequest().permitAll()
                 )
 
-                // ========== 添加自定义过滤器 ==========
+                // ========== 添加自定义过滤器（JWT） ==========
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
 
                 .build();
+    }
+
+    /**
+     * 密码编码器配置
+     *
+     * <p>使用BCrypt算法，强度设置为12轮，在安全性和性能之间取得平衡。
+     * 生产环境建议使用更高的强度值。</p>
+     */
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder(12);
     }
 
     /**
@@ -190,9 +191,11 @@ public class SecurityAutoConfiguration {
      * 它会从数据库加载用户信息并验证密码。</p>
      */
     @Bean
-    public AuthenticationProvider authenticationProvider() {
+    public AuthenticationProvider authenticationProvider(
+            UserDetailsService userDetailsService,
+            PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userDetailsService);
-//        authProvider.setPasswordEncoder(passwordEncoder);
+        authProvider.setPasswordEncoder(passwordEncoder);
         // 隐藏用户不存在的异常，防止用户枚举攻击
         authProvider.setHideUserNotFoundExceptions(false);
         return authProvider;

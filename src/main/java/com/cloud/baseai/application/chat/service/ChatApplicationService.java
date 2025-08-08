@@ -27,7 +27,7 @@ import com.cloud.baseai.infrastructure.constants.ChatConstants;
 import com.cloud.baseai.infrastructure.exception.BusinessException;
 import com.cloud.baseai.infrastructure.exception.ChatException;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
-import com.cloud.baseai.infrastructure.external.llm.service.ChatCompletionService;
+import com.cloud.baseai.infrastructure.external.llm.factory.ChatModelFactory;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,7 +73,7 @@ public class ChatApplicationService {
     private final UsageCalculationService usageService;
 
     // 外部服务
-    private final ChatCompletionService llmService;
+    private final ChatModelFactory chatModelFactory;
 
     // 集成服务
     private final KnowledgeBaseAppService kbService;
@@ -99,7 +99,7 @@ public class ChatApplicationService {
             ChatUsageRepository usageRepo,
             ChatProcessingService chatService,
             UsageCalculationService usageService,
-            ChatCompletionService llmService,
+            ChatModelFactory chatModelFactory,
             KnowledgeBaseAppService kbService,
             McpApplicationService mcpService,
             FlowOrchestrationAppService flowService,
@@ -111,7 +111,7 @@ public class ChatApplicationService {
         this.usageRepo = usageRepo;
         this.chatService = chatService;
         this.usageService = usageService;
-        this.llmService = llmService;
+        this.chatModelFactory = chatModelFactory;
         this.kbService = kbService;
         this.mcpService = mcpService;
         this.flowService = flowService;
@@ -136,7 +136,7 @@ public class ChatApplicationService {
 
         try {
             // 验证模型可用性
-            if (!llmService.isModelAvailable(cmd.defaultModel())) {
+            if (!chatModelFactory.isModelAvailable(cmd.defaultModel())) {
                 throw ChatException.modelUnavailable(cmd.defaultModel());
             }
 
@@ -279,7 +279,7 @@ public class ChatApplicationService {
 
             // 验证新模型（如果更改）
             if (cmd.defaultModel() != null && !cmd.defaultModel().equals(thread.defaultModel())) {
-                if (!llmService.isModelAvailable(cmd.defaultModel())) {
+                if (!chatModelFactory.isModelAvailable(cmd.defaultModel())) {
                     throw ChatException.modelUnavailable(cmd.defaultModel());
                 }
             }
@@ -681,7 +681,7 @@ public class ChatApplicationService {
 
             // 检查LLM服务
             try {
-                boolean available = llmService.isHealthy();
+                boolean available = chatModelFactory.isHealthy();
                 components.put("llm_service", available ? "healthy" : "unhealthy");
             } catch (Exception e) {
                 components.put("llm_service", "unhealthy: " + e.getMessage());
@@ -768,7 +768,7 @@ public class ChatApplicationService {
 
             // 流式生成回复
             StringBuilder responseBuilder = new StringBuilder();
-            llmService.generateStreamResponse(
+            chatModelFactory.generateStreamResponse(
                     buildStreamContext(thread, cmd, citations, toolCalls),
                     chunk -> {
                         try {
@@ -1026,7 +1026,7 @@ public class ChatApplicationService {
             Map<String, Object> llmContext = buildLLMContext(thread, context);
 
             // 调用LLM生成回复
-            var completionResult = llmService.generateCompletion(llmContext);
+            var completionResult = chatModelFactory.generateCompletion(llmContext);
 
             // 创建助手消息
             ChatMessage assistantMessage = ChatMessage.create(
