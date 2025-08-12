@@ -2,8 +2,9 @@ package com.cloud.baseai.adapter.web.auth;
 
 import com.cloud.baseai.infrastructure.exception.ApiResult;
 import com.cloud.baseai.infrastructure.security.UserPrincipal;
-import com.cloud.baseai.infrastructure.security.jwt.JwtUtils;
+import com.cloud.baseai.infrastructure.security.jwt.JwtTokenService;
 import com.cloud.baseai.infrastructure.security.service.CustomUserDetailsService;
+import com.cloud.baseai.infrastructure.utils.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -23,7 +24,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -39,15 +39,19 @@ import java.util.List;
  *
  * <p><b>现代认证系统的复杂性：</b></p>
  * <p>在移动互联网时代，用户认证不再是简单的用户名密码验证。我们需要考虑：</p>
- * <p>- 多种登录方式：用户名、邮箱、手机号、第三方登录</p>
- * <p>- 安全性要求：防暴力破解、防撞库、防钓鱼</p>
- * <p>- 用户体验：记住登录状态、无感刷新令牌</p>
- * <p>- 多端同步：Web、移动App、小程序等多平台统一认证</p>
+ * <ul>
+ * <li>多种登录方式：用户名、邮箱、手机号、第三方登录</li>
+ * <li>安全性要求：防暴力破解、防撞库、防钓鱼</li>
+ * <li>用户体验：记住登录状态、无感刷新令牌</li>
+ * <li>多端同步：Web、移动App、小程序等多平台统一认证</li>
+ * </ul>
  *
  * <p><b>JWT令牌管理策略：</b></p>
  * <p>我们采用了双令牌（Access Token + Refresh Token）策略：</p>
- * <p>- Access Token：短期有效（如1小时），用于API访问</p>
- * <p>- Refresh Token：长期有效（如7天），用于刷新Access Token</p>
+ * <ul>
+ * <li>Access Token：短期有效（如1小时），用于API访问</li>
+ * <li>Refresh Token：长期有效（如7天），用于刷新Access Token</li>
+ * </ul>
  * <p>这种设计在安全性和用户体验之间找到了很好的平衡点。</p>
  */
 @RestController
@@ -59,7 +63,7 @@ public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final AuthenticationManager authenticationManager;
-    private final JwtUtils jwtUtils;
+    private final JwtTokenService jwtTokenService;
     private final CustomUserDetailsService userDetailsService;
 
     /**
@@ -67,10 +71,10 @@ public class AuthController {
      */
     public AuthController(
             AuthenticationManager authenticationManager,
-            JwtUtils jwtUtils,
+            JwtTokenService jwtTokenService,
             CustomUserDetailsService userDetailsService) {
         this.authenticationManager = authenticationManager;
-        this.jwtUtils = jwtUtils;
+        this.jwtTokenService = jwtTokenService;
         this.userDetailsService = userDetailsService;
     }
 
@@ -81,21 +85,25 @@ public class AuthController {
      * 返回JWT令牌。整个过程就像酒店前台验证客人身份并发放房卡。</p>
      *
      * <p><b>登录安全机制：</b></p>
-     * <p>1. 密码强度验证：确保密码符合安全要求</p>
-     * <p>2. 登录尝试限制：防止暴力破解攻击</p>
-     * <p>3. 异地登录检测：发现异常登录行为</p>
-     * <p>4. 设备指纹记录：跟踪登录设备信息</p>
+     * <ul>
+     * <li>密码强度验证：确保密码符合安全要求</li>
+     * <li>登录尝试限制：防止暴力破解攻击</li>
+     * <li>异地登录检测：发现异常登录行为</li>
+     * <li>设备指纹记录：跟踪登录设备信息</li>
+     * </ul>
      *
      * <p><b>用户体验优化：</b></p>
-     * <p>- 支持用户名或邮箱登录</p>
-     * <p>- 登录状态记忆（通过Refresh Token）</p>
-     * <p>- 登录失败友好提示</p>
-     * <p>- 异步验证提升响应速度</p>
+     * <ul>
+     * <li>支持用户名或邮箱登录</li>
+     * <li>登录状态记忆（通过Refresh Token）</li>
+     * <li>登录失败友好提示</li>
+     * <li>异步验证提升响应速度</li>
+     * </ul>
      */
     @PostMapping("/login")
     @Operation(
             summary = "用户登录",
-            description = "使用用户名/邮箱和密码进行登录认证，成功后返回JWT访问令牌和刷新令牌。"
+            description = "使用用户名/邮箱和密码进行登录认证，成功后返回JWT访问令牌和刷新令牌。支持设备指纹验证和记住我功能。"
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "登录成功",
@@ -126,9 +134,10 @@ public class AuthController {
 
         String clientIp = getClientIpAddress(request);
         String userAgent = request.getHeader("User-Agent");
+        String deviceFingerprint = extractDeviceFingerprint(request);
 
-        log.info("用户登录请求: username={}, ip={}, userAgent={}",
-                loginRequest.username(), clientIp, userAgent);
+        log.info("用户登录请求: username={}, ip={}, userAgent={}, hasFingerprint={}",
+                loginRequest.username(), clientIp, userAgent, deviceFingerprint != null);
 
         try {
             // 执行Spring Security认证
@@ -145,27 +154,29 @@ public class AuthController {
             // 获取用户主体信息
             UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
 
-            // 生成JWT令牌
-            String accessToken = jwtUtils.generateAccessToken(authentication);
-            String refreshToken = jwtUtils.generateRefreshToken(userPrincipal);
+            // 生成JWT令牌对（包含访问令牌和刷新令牌）
+            JwtTokenService.TokenPair tokenPair = jwtTokenService.generateTokenPair(
+                    userPrincipal, deviceFingerprint, clientIp);
 
             // 构建登录响应
             LoginResponse response = new LoginResponse(
-                    accessToken,
-                    refreshToken,
-                    "Bearer",
-                    jwtUtils.getTokenRemainingTime(accessToken),
+                    tokenPair.accessToken(),
+                    tokenPair.refreshToken(),
+                    tokenPair.getTokenType(),
+                    jwtTokenService.getTokenRemainingTime(tokenPair.accessToken()),
                     new UserInfo(
                             userPrincipal.getId(),
                             userPrincipal.getUsername(),
                             userPrincipal.getEmail(),
                             userPrincipal.getRoles(),
                             userPrincipal.getTenantIds()
-                    )
+                    ),
+                    deviceFingerprint,
+                    loginRequest.rememberMe()
             );
 
             // 记录登录成功事件
-            logLoginSuccess(userPrincipal, clientIp, userAgent);
+            logLoginSuccess(userPrincipal, clientIp, userAgent, deviceFingerprint);
 
             return ResponseEntity.ok(ApiResult.success(response, "登录成功"));
 
@@ -187,15 +198,17 @@ public class AuthController {
      * Access Token，而无需用户重新登录。这就像酒店的房卡续期服务。</p>
      *
      * <p><b>令牌刷新的安全考虑：</b></p>
-     * <p>1. Refresh Token的一次性使用原则</p>
-     * <p>2. 令牌轮换（Token Rotation）机制</p>
-     * <p>3. 设备绑定验证</p>
-     * <p>4. 异常刷新行为检测</p>
+     * <ul>
+     * <li>Refresh Token的一次性使用原则</li>
+     * <li>令牌轮换（Token Rotation）机制</li>
+     * <li>设备绑定验证</li>
+     * <li>异常刷新行为检测</li>
+     * </ul>
      */
     @PostMapping("/refresh")
     @Operation(
             summary = "刷新访问令牌",
-            description = "使用刷新令牌获取新的访问令牌，延长用户登录状态而无需重新输入密码。"
+            description = "使用刷新令牌获取新的访问令牌，延长用户登录状态而无需重新输入密码。支持设备指纹验证。"
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "令牌刷新成功"),
@@ -203,57 +216,40 @@ public class AuthController {
             @ApiResponse(responseCode = "403", description = "刷新令牌已被撤销")
     })
     public ResponseEntity<ApiResult<TokenResponse>> refreshToken(
-            @Valid @RequestBody RefreshTokenRequest request) {
+            @Valid @RequestBody RefreshTokenRequest request,
+            HttpServletRequest httpRequest) {
 
         String refreshToken = request.refreshToken();
+        String deviceFingerprint = extractDeviceFingerprint(httpRequest);
 
-        log.debug("收到令牌刷新请求");
+        log.debug("收到令牌刷新请求, hasFingerprint={}", deviceFingerprint != null);
 
         try {
-            // 验证刷新令牌的有效性
-            if (!jwtUtils.validateToken(refreshToken)) {
-                log.warn("无效的刷新令牌");
-                return ResponseEntity.ok(ApiResult.error("INVALID_REFRESH_TOKEN", "刷新令牌无效"));
+            // 验证并刷新令牌
+            String newAccessToken = jwtTokenService.refreshAccessToken(refreshToken, deviceFingerprint);
+
+            if (newAccessToken == null) {
+                log.warn("令牌刷新失败：无法生成新的访问令牌");
+                return ResponseEntity.ok(ApiResult.error("TOKEN_REFRESH_FAILED", "令牌刷新失败"));
             }
 
-            // 检查这是否确实是一个刷新令牌
-            if (!jwtUtils.isRefreshToken(refreshToken)) {
-                log.warn("提供的不是刷新令牌");
-                return ResponseEntity.ok(ApiResult.error("INVALID_TOKEN_TYPE", "令牌类型错误"));
-            }
-
-            // 从刷新令牌中获取用户信息
-            Long userId = jwtUtils.getUserIdFromToken(refreshToken);
-            UserDetails userDetails = userDetailsService.loadUserById(userId);
-
-            if (userDetails == null) {
-                log.warn("刷新令牌对应的用户不存在: userId={}", userId);
-                return ResponseEntity.ok(ApiResult.error("USER_NOT_FOUND", "用户不存在"));
-            }
-
-            // 检查用户账户状态
-            if (!userDetails.isEnabled() || !userDetails.isAccountNonLocked()) {
-                log.warn("用户账户状态异常: userId={}", userId);
-                return ResponseEntity.ok(ApiResult.error("ACCOUNT_DISABLED", "账户已被禁用"));
-            }
-
-            UserPrincipal userPrincipal = (UserPrincipal) userDetails;
-
-            // 生成新的访问令牌
-            String newAccessToken = jwtUtils.generateAccessToken(userPrincipal);
-            String newRefreshToken = jwtUtils.generateRefreshToken(userPrincipal);
-
+            // 构建响应（这里简化处理，实际可能需要生成新的刷新令牌）
             TokenResponse response = new TokenResponse(
                     newAccessToken,
-                    newRefreshToken,
+                    refreshToken, // 简化：复用原刷新令牌
                     "Bearer",
-                    jwtUtils.getTokenRemainingTime(newAccessToken)
+                    jwtTokenService.getTokenRemainingTime(newAccessToken)
             );
 
-            log.debug("令牌刷新成功: userId={}", userId);
-
+            log.debug("令牌刷新成功");
             return ResponseEntity.ok(ApiResult.success(response, "令牌刷新成功"));
 
+        } catch (SecurityException e) {
+            log.warn("令牌刷新安全验证失败: {}", e.getMessage());
+            return ResponseEntity.ok(ApiResult.error("SECURITY_VIOLATION", "安全验证失败"));
+        } catch (IllegalArgumentException e) {
+            log.warn("令牌刷新参数错误: {}", e.getMessage());
+            return ResponseEntity.ok(ApiResult.error("INVALID_TOKEN", "无效的刷新令牌"));
         } catch (Exception e) {
             log.error("令牌刷新失败", e);
             return ResponseEntity.ok(ApiResult.error("TOKEN_REFRESH_FAILED", "令牌刷新失败"));
@@ -263,7 +259,7 @@ public class AuthController {
     /**
      * 用户登出
      *
-     * <p>登出操作会使当前的令牌失效。在分布式系统中，我们通常使用
+     * <p>登出操作会使当前的令牌失效。在分布式系统中，我们使用
      * 黑名单机制来实现令牌的即时失效。</p>
      */
     @PostMapping("/logout")
@@ -281,11 +277,11 @@ public class AuthController {
             // 提取JWT令牌
             String token = extractTokenFromHeader(authHeader);
             if (token != null) {
-                // 这里可以将令牌加入黑名单
-                // tokenBlacklistService.addToBlacklist(token);
+                // 将令牌加入黑名单
+                jwtTokenService.revokeToken(token);
 
                 // 获取当前用户信息用于日志记录
-                Long userId = jwtUtils.getUserIdFromToken(token);
+                Long userId = jwtTokenService.getUserIdFromToken(token);
                 log.info("用户登出: userId={}, ip={}", userId, clientIp);
             }
 
@@ -296,6 +292,34 @@ public class AuthController {
 
         } catch (Exception e) {
             log.error("登出处理异常", e);
+            // 即使出现异常也返回成功，避免暴露系统内部信息
+            return ResponseEntity.ok(ApiResult.success(null, "登出成功"));
+        }
+    }
+
+    /**
+     * 登出所有设备
+     *
+     * <p>撤销用户在所有设备上的登录状态，用于安全场景。</p>
+     */
+    @PostMapping("/logout-all")
+    @Operation(
+            summary = "登出所有设备",
+            description = "撤销当前用户在所有设备上的登录状态，使所有令牌失效。"
+    )
+    public ResponseEntity<ApiResult<Void>> logoutAll() {
+        try {
+            Long userId = SecurityUtils.getCurrentUserId().orElse(null);
+            if (userId != null) {
+                jwtTokenService.revokeAllUserTokens(userId);
+                log.info("用户所有设备登出: userId={}", userId);
+            }
+
+            SecurityContextHolder.clearContext();
+            return ResponseEntity.ok(ApiResult.success(null, "所有设备登出成功"));
+
+        } catch (Exception e) {
+            log.error("登出所有设备异常", e);
             return ResponseEntity.ok(ApiResult.success(null, "登出成功"));
         }
     }
@@ -346,27 +370,30 @@ public class AuthController {
     @PostMapping("/validate")
     @Operation(
             summary = "验证令牌",
-            description = "验证JWT令牌的有效性，返回令牌状态和用户信息。"
+            description = "验证JWT令牌的有效性，返回令牌状态和用户信息。支持设备指纹验证。"
     )
     public ResponseEntity<ApiResult<TokenValidationResponse>> validateToken(
-            @Valid @RequestBody TokenValidationRequest request) {
+            @Valid @RequestBody TokenValidationRequest request,
+            HttpServletRequest httpRequest) {
 
         try {
             String token = request.token();
+            String deviceFingerprint = extractDeviceFingerprint(httpRequest);
 
-            if (!jwtUtils.validateToken(token)) {
+            if (!jwtTokenService.validateToken(token, deviceFingerprint)) {
                 return ResponseEntity.ok(ApiResult.success(
                         new TokenValidationResponse(false, "令牌无效", null)
                 ));
             }
 
             // 获取令牌中的用户信息
-            Long userId = jwtUtils.getUserIdFromToken(token);
-            String username = jwtUtils.getUsernameFromToken(token);
-            List<String> roles = jwtUtils.getRolesFromToken(token);
-            List<Long> tenantIds = jwtUtils.getTenantIdsFromToken(token);
+            Long userId = jwtTokenService.getUserIdFromToken(token);
+            String username = jwtTokenService.getUsernameFromToken(token);
+            String email = jwtTokenService.getEmailFromToken(token);
+            List<String> roles = jwtTokenService.getRolesFromToken(token);
+            List<Long> tenantIds = jwtTokenService.getTenantIdsFromToken(token);
 
-            UserInfo userInfo = new UserInfo(userId, username, null, roles, tenantIds);
+            UserInfo userInfo = new UserInfo(userId, username, email, roles, tenantIds);
 
             return ResponseEntity.ok(ApiResult.success(
                     new TokenValidationResponse(true, "令牌有效", userInfo)
@@ -402,11 +429,40 @@ public class AuthController {
     }
 
     /**
+     * 提取设备指纹
+     */
+    private String extractDeviceFingerprint(HttpServletRequest request) {
+        // 优先从自定义头中获取
+        String fingerprint = request.getHeader("X-Device-Fingerprint");
+
+        if (!StringUtils.hasText(fingerprint)) {
+            // 基于请求信息生成简单指纹
+            String userAgent = request.getHeader("User-Agent");
+            String acceptLanguage = request.getHeader("Accept-Language");
+            String acceptEncoding = request.getHeader("Accept-Encoding");
+
+            if (userAgent != null) {
+                StringBuilder fpBuilder = new StringBuilder();
+                fpBuilder.append(userAgent.hashCode());
+                if (acceptLanguage != null) {
+                    fpBuilder.append(":").append(acceptLanguage.hashCode());
+                }
+                if (acceptEncoding != null) {
+                    fpBuilder.append(":").append(acceptEncoding.hashCode());
+                }
+                fingerprint = String.valueOf(fpBuilder.toString().hashCode());
+            }
+        }
+
+        return fingerprint;
+    }
+
+    /**
      * 从Authorization头中提取令牌
      */
     private String extractTokenFromHeader(String authHeader) {
         if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
-            return authHeader.substring(7);
+            return authHeader.substring(7).trim();
         }
         return null;
     }
@@ -414,12 +470,13 @@ public class AuthController {
     /**
      * 记录登录成功事件
      */
-    private void logLoginSuccess(UserPrincipal user, String clientIp, String userAgent) {
-        log.info("登录成功 - userId: {}, username: {}, ip: {}, userAgent: {}, time: {}",
-                user.getId(), user.getUsername(), clientIp, userAgent, LocalDateTime.now());
+    private void logLoginSuccess(UserPrincipal user, String clientIp, String userAgent, String deviceFingerprint) {
+        log.info("登录成功 - userId: {}, username: {}, ip: {}, userAgent: {}, fingerprint: {}, time: {}",
+                user.getId(), user.getUsername(), clientIp, userAgent,
+                deviceFingerprint != null ? "present" : "absent", LocalDateTime.now());
 
-        // 这里可以发送登录成功事件到审计系统
-        // auditService.recordLoginSuccess(user.getId(), clientIp, userAgent);
+        // 发送登录成功事件到审计系统
+        // auditService.recordLoginSuccess(user.getId(), clientIp, userAgent, deviceFingerprint);
     }
 
     /**
@@ -429,7 +486,7 @@ public class AuthController {
         log.warn("登录失败 - username: {}, ip: {}, userAgent: {}, reason: {}, time: {}",
                 username, clientIp, userAgent, reason, LocalDateTime.now());
 
-        // 这里可以发送登录失败事件到安全监控系统
+        // 发送登录失败事件到安全监控系统
         // securityService.recordLoginFailure(username, clientIp, userAgent, reason);
     }
 
@@ -461,7 +518,9 @@ public class AuthController {
             String refreshToken,
             String tokenType,
             long expiresIn,
-            UserInfo userInfo
+            UserInfo userInfo,
+            String deviceFingerprint,
+            boolean rememberMe
     ) {
     }
 

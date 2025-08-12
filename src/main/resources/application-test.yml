@@ -12,15 +12,18 @@ logging:
 
 # 测试环境特定配置
 baseai:
+  security:
+    jwt:
+      use-rsa: false
+      secret: test-secret-key-for-testing-only
+      access-token-expiration: 3600000  # 1小时
+    auth:
+      enable-multi-device: false
+      max-devices-per-user: 1
   # 测试环境启用模拟服务
   llm:
     openai:
       enabled: false
-    mock:
-      enabled: true
-      simulated-delay: PT0.5S
-      simulate-errors: false
-      error-rate: 0.1
 
   scheduling:
     enabled: true

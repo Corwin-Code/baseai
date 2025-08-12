@@ -64,7 +64,7 @@ spring:
   # =================== Redis 缓存配置 ===================
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:172.18.20.209}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
@@ -212,7 +212,7 @@ logging:
     console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
   file:
-    name: ${LOG_FILE:logs/baseai.log}
+    name: ${LOG_FILE:logs/baseai-cloud.log}
   logback:
     rollingpolicy:
       max-file-size: ${LOG_FILE_MAX_SIZE:100MB}
@@ -242,20 +242,38 @@ baseai:
   security:
     # JWT 令牌配置
     jwt:
-      # JWT 签名密钥，生产环境必须使用强密钥
-      secret: ${JWT_SECRET:very-long-secret-key-at-least-256-bits-for-production}
-      # 访问令牌有效期（24小时）
-      access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:86400000}
+      # 是否使用RSA加密（推荐生产环境使用）
+      use-rsa: true
+      # RSA密钥对（Base64编码）
+      # 生产环境中这些密钥应该从外部密钥管理服务或环境变量中加载
+      rsa-private-key: ${JWT_RSA_PRIVATE_KEY:MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKBxEqE5z...}
+      rsa-public-key: ${JWT_RSA_PUBLIC_KEY:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1L7VLPHCgcRKhOc...}
+      # HMAC密钥（当use-rsa=false时使用）
+      secret: ${JWT_SECRET:very-long-secret-key-at-least-256-bits-for-production-environment-security}
+
+      # 令牌过期时间配置
+      # 访问令牌有效期（1小时）
+      access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:3600000}
       # 刷新令牌有效期（7天）
       refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:604800000}
       # JWT 发行者标识
-      issuer: ${JWT_ISSUER:baseai-system}
+      issuer: ${JWT_ISSUER:baseai-cloud-system}
+
+      # 安全特性开关
+      # 是否启用令牌黑名单
+      enable-blacklist: true
+      # 是否启用设备指纹验证
+      enable-device-fingerprint: true
+      # 自动刷新阈值（秒）
+      auto-refresh-threshold: 1800
 
     # 跨域资源共享配置
     cors:
-      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080}
+      enabled: true
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080,https://*.baseai.com}
       allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS,PATCH}
-      allowed-headers: ${CORS_ALLOWED_HEADERS:Authorization,Content-Type,X-Requested-With}
+      allowed-headers: "*"
+      exposed-headers: ${CORS_EXPOSED_HEADERS:Authorization,X-Total-Count,X-Page-Number,X-Page-Size}
       allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
       max-age: ${CORS_MAX_AGE:3600}
 
@@ -283,6 +301,35 @@ baseai:
       lockout-threshold: ${PASSWORD_LOCKOUT_THRESHOLD:5}
       # 账户锁定时间（分钟）
       lockout-duration-minutes: ${PASSWORD_LOCKOUT_DURATION:30}
+      # 启用密码复杂度检查
+      enable-complexity-check: true
+      # 启用弱密码检测
+      enable-weak-password-check: true
+
+    # 认证相关配置
+    auth:
+      # 是否允许多设备登录
+      enable-multi-device: true
+      # 单用户最大同时登录设备数
+      max-devices-per-user: 5
+      # 是否启用IP地址验证
+      enable-ip-validation: false
+      # 允许的IP地址列表
+      allowed-ips: ""
+      # 会话超时时间
+      session-timeout-minutes: 120
+      # 是否启用记住我功能
+      enable-remember-me: true
+      # 记住我有效期
+      remember-me-days: 30
+      # 是否启用验证码
+      enable-captcha: false
+      # 验证码触发阈值
+      captcha-threshold: 3
+      # 是否启用二次验证
+      enable-two-factor-auth: false
+      # 二次验证代码有效期
+      two-factor-code-expiration: 300
 
   # ========== 速率限制配置 ==========
   rate-limit:

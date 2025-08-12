@@ -1,5 +1,6 @@
-package com.cloud.baseai.infrastructure.security;
+package com.cloud.baseai.infrastructure.utils;
 
+import com.cloud.baseai.infrastructure.security.UserPrincipal;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,17 +23,21 @@ import java.util.regex.Pattern;
  * 还是在工具方法中处理敏感数据，这个类都能提供便捷、安全、可靠的支持。</p>
  *
  * <p><b>设计原则：</b></p>
- * <p>1. <strong>安全第一：</strong>所有方法都经过安全评估，避免常见的安全漏洞</p>
- * <p>2. <strong>易于使用：</strong>提供简洁的API，让开发者能够轻松集成安全功能</p>
- * <p>3. <strong>性能优化：</strong>对于频繁调用的方法进行了性能优化</p>
- * <p>4. <strong>错误容忍：</strong>优雅地处理异常情况，不会因为安全检查而影响业务流程</p>
+ * <ul>
+ * <li><b>安全第一：</b>所有方法都经过安全评估，避免常见的安全漏洞</li>
+ * <li><b>易于使用：</b>提供简洁的API，让开发者能够轻松集成安全功能</li>
+ * <li><b>性能优化：</b>对于频繁调用的方法进行了性能优化</li>
+ * <li><b>错误容忍：</b>优雅地处理异常情况，不会因为安全检查而影响业务流程</li>
+ * </ul>
  *
  * <p><b>常用场景：</b></p>
- * <p>- 在Service层检查当前用户权限</p>
- * <p>- 在数据处理时脱敏敏感信息</p>
- * <p>- 生成安全的随机令牌</p>
- * <p>- 验证密码强度</p>
- * <p>- 记录安全相关的操作日志</p>
+ * <ul>
+ * <li>在Service层检查当前用户权限</li>
+ * <li>在数据处理时脱敏敏感信息</li>
+ * <li>生成安全的随机令牌</li>
+ * <li>验证密码强度</li>
+ * <li>记录安全相关的操作日志</li>
+ * </ul>
  */
 public final class SecurityUtils {
 
@@ -62,12 +67,6 @@ public final class SecurityUtils {
      */
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-//    /**
-//     * 默认的密码编码器
-//     * <p>使用BCrypt算法，它是目前最推荐的密码哈希算法之一</p>
-//     */
-//    private static final PasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder(12);
-
     /**
      * 私有构造函数，防止实例化
      * <p>这是一个工具类，所有方法都是静态的，不需要实例化</p>
@@ -85,9 +84,11 @@ public final class SecurityUtils {
      * 这个方法从Spring Security的上下文中提取当前用户信息。</p>
      *
      * <p><b>使用场景：</b></p>
-     * <p>- 记录操作日志：谁在什么时候做了什么</p>
-     * <p>- 数据权限控制：只能查看自己创建的数据</p>
-     * <p>- 业务逻辑处理：根据用户身份执行不同逻辑</p>
+     * <ul>
+     * <li>记录操作日志：谁在什么时候做了什么</li>
+     * <li>数据权限控制：只能查看自己创建的数据</li>
+     * <li>业务逻辑处理：根据用户身份执行不同逻辑</li>
+     * </ul>
      *
      * @return 当前用户ID，如果用户未登录则返回Optional.empty()
      */
@@ -275,13 +276,27 @@ public final class SecurityUtils {
         return hasRole("SYSTEM_ADMIN") || isSuperAdmin();
     }
 
+    /**
+     * 检查当前用户是否已认证
+     */
+    public static boolean isAuthenticated() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            return authentication != null && authentication.isAuthenticated() &&
+                    !"anonymousUser".equals(authentication.getPrincipal());
+        } catch (Exception e) {
+            log.debug("认证状态检查失败", e);
+            return false;
+        }
+    }
+
     // =================== 密码相关方法 ===================
 
     /**
      * 加密密码
      *
-     * <p>这个方法使用BCrypt算法对密码进行加密。BCrypt是目前最推荐的
-     * 密码哈希算法，它内置了盐值生成和多轮哈希处理。</p>
+     * <p>这个方法使用提供的密码编码器对密码进行加密。支持各种加密算法
+     * （BCrypt、Argon2等），确保密码存储的安全性。</p>
      *
      * <p><b>为什么不能直接存储明文密码？</b></p>
      * <p>即使是系统管理员也不应该知道用户的实际密码。加密存储确保了
@@ -295,6 +310,11 @@ public final class SecurityUtils {
         if (rawPassword == null || rawPassword.isEmpty()) {
             throw new IllegalArgumentException("密码不能为空");
         }
+
+        if (encoder == null) {
+            throw new IllegalArgumentException("密码编码器不能为空");
+        }
+
         return encoder.encode(rawPassword);
     }
 
@@ -302,7 +322,7 @@ public final class SecurityUtils {
      * 验证密码
      *
      * <p>这个方法验证用户输入的密码是否与存储的加密密码匹配。
-     * BCrypt算法会自动处理盐值和哈希比较。</p>
+     * 加密算法会自动处理盐值和哈希比较。</p>
      *
      * @param rawPassword     用户输入的原始密码
      * @param encodedPassword 存储的加密密码
@@ -310,9 +330,10 @@ public final class SecurityUtils {
      * @return 如果密码匹配返回true，否则返回false
      */
     public static boolean matchesPassword(String rawPassword, String encodedPassword, PasswordEncoder encoder) {
-        if (rawPassword == null || encodedPassword == null) {
+        if (rawPassword == null || encodedPassword == null || encoder == null) {
             return false;
         }
+
         try {
             return encoder.matches(rawPassword, encodedPassword);
         } catch (Exception e) {
@@ -327,11 +348,13 @@ public final class SecurityUtils {
      * <p>强密码是账户安全的第一道防线。这个方法检查密码是否符合安全要求。</p>
      *
      * <p><b>密码强度要求：</b></p>
-     * <p>- 至少8个字符</p>
-     * <p>- 包含大写字母</p>
-     * <p>- 包含小写字母</p>
-     * <p>- 包含数字</p>
-     * <p>- 包含特殊字符</p>
+     * <ul>
+     * <li>至少8个字符</li>
+     * <li>包含大写字母</li>
+     * <li>包含小写字母</li>
+     * <li>包含数字</li>
+     * <li>包含特殊字符</li>
+     * </ul>
      *
      * @param password 要检查的密码
      * @return 密码强度检查结果
@@ -400,12 +423,18 @@ public final class SecurityUtils {
      * 生成安全的随机令牌
      *
      * <p>这个方法生成密码学安全的随机令牌，可用于各种安全目的：</p>
-     * <p>- 邮箱验证码</p>
-     * <p>- 密码重置令牌</p>
-     * <p>- API密钥</p>
-     * <p>- 会话标识符</p>
+     * <ul>
+     * <li>邮箱验证码</li>
+     * <li>密码重置令牌</li>
+     * <li>API密钥</li>
+     * <li>会话标识符</li>
+     * </ul>
      */
     public static String generateSecureToken(int length) {
+        if (length <= 0) {
+            throw new IllegalArgumentException("令牌长度必须大于0");
+        }
+
         byte[] randomBytes = new byte[length];
         SECURE_RANDOM.nextBytes(randomBytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
@@ -417,9 +446,29 @@ public final class SecurityUtils {
      * <p>生成指定长度的数字验证码，常用于短信验证和邮箱验证。</p>
      */
     public static String generateNumericCode(int length) {
+        if (length <= 0) {
+            throw new IllegalArgumentException("验证码长度必须大于0");
+        }
+
         StringBuilder code = new StringBuilder();
         for (int i = 0; i < length; i++) {
             code.append(SECURE_RANDOM.nextInt(10));
+        }
+        return code.toString();
+    }
+
+    /**
+     * 生成字母数字混合码
+     */
+    public static String generateAlphanumericCode(int length) {
+        if (length <= 0) {
+            throw new IllegalArgumentException("验证码长度必须大于0");
+        }
+
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        StringBuilder code = new StringBuilder();
+        for (int i = 0; i < length; i++) {
+            code.append(chars.charAt(SECURE_RANDOM.nextInt(chars.length())));
         }
         return code.toString();
     }
@@ -441,6 +490,10 @@ public final class SecurityUtils {
         }
 
         String[] parts = email.split("@");
+        if (parts.length != 2) {
+            return "***";
+        }
+
         String username = parts[0];
         String domain = parts[1];
 
@@ -471,6 +524,10 @@ public final class SecurityUtils {
             int start = visibleStart;
             int end = phone.length() - visibleEnd;
 
+            if (end <= start) {
+                return "*".repeat(phone.length());
+            }
+
             return phone.substring(0, start) + "*".repeat(end - start) + phone.substring(end);
         }
     }
@@ -486,6 +543,34 @@ public final class SecurityUtils {
         }
 
         return idCard.substring(0, 6) + "*".repeat(idCard.length() - 10) + idCard.substring(idCard.length() - 4);
+    }
+
+    /**
+     * 脱敏银行卡号
+     */
+    public static String maskBankCard(String cardNumber) {
+        if (cardNumber == null || cardNumber.length() < 8) {
+            return "***";
+        }
+
+        return "*".repeat(cardNumber.length() - 4) + cardNumber.substring(cardNumber.length() - 4);
+    }
+
+    /**
+     * 脱敏姓名
+     */
+    public static String maskName(String name) {
+        if (name == null || name.isEmpty()) {
+            return "***";
+        }
+
+        if (name.length() == 1) {
+            return "*";
+        } else if (name.length() == 2) {
+            return name.charAt(0) + "*";
+        } else {
+            return name.charAt(0) + "*".repeat(name.length() - 2) + name.charAt(name.length() - 1);
+        }
     }
 
     // =================== 私有辅助方法 ===================

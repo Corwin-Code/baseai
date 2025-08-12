@@ -17,6 +17,9 @@ logging:
     com.cloud.baseai: INFO
     org.springframework.web: WARN
     org.springframework.scheduling: WARN  # 减少日志噪音
+    org.springframework.security: WARN
+  file:
+    name: /var/log/baseai-cloud/application.log
 
 # 生产环境特定配置
 baseai:
@@ -28,13 +31,25 @@ baseai:
 
   # 生产环境启用更严格的安全策略
   security:
+    jwt:
+      use-rsa: true  # 生产环境强制使用RSA
+      rsa-private-key: ${JWT_RSA_PRIVATE_KEY}
+      rsa-public-key: ${JWT_RSA_PUBLIC_KEY}
+      access-token-expiration: 1800000   # 30分钟
+      refresh-token-expiration: 604800000 # 7天
+      enable-blacklist: true
+      enable-device-fingerprint: true
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS}
     password:
-      min-length: 12
-      require-uppercase: true
-      require-lowercase: true
-      require-numbers: true
-      require-special-chars: true
-      max-age-days: 60
+      enable-complexity-check: true
+      enable-weak-password-check: true
+      lockout-threshold: 3
+      lockout-duration-minutes: 60
+    auth:
+      enable-captcha: true
+      captcha-threshold: 2
+      enable-two-factor-auth: true
 
   # 生产环境启用缓存预热
   cache:

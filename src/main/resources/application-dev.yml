@@ -27,6 +27,15 @@ baseai:
 
   # 开发环境降低安全要求
   security:
+    jwt:
+      use-rsa: false  # 开发环境使用HMAC简化配置
+      secret: dev-secret-key-for-development-only-not-for-production
+      access-token-expiration: 86400000  # 24小时
+    cors:
+      allowed-origins: "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000"
+    auth:
+      enable-multi-device: true
+      enable-captcha: false
     password:
       min-length: 6
       require-uppercase: false
