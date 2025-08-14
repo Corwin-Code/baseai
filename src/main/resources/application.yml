@@ -203,6 +203,7 @@ logging:
     org.springframework.security: ${LOG_LEVEL_SECURITY:INFO}
     org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.hibernate.orm.connections.pooling: WARN
     org.springframework.cache: DEBUG
     com.alibaba.cloud.ai: INFO
     org.springframework.ai: INFO
@@ -246,8 +247,8 @@ baseai:
       use-rsa: true
       # RSA密钥对（Base64编码）
       # 生产环境中这些密钥应该从外部密钥管理服务或环境变量中加载
-      rsa-private-key: ${JWT_RSA_PRIVATE_KEY:MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKBxEqE5z...}
-      rsa-public-key: ${JWT_RSA_PUBLIC_KEY:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1SU1L7VLPHCgcRKhOc...}
+      rsa-private-key: ${JWT_RSA_PRIVATE_KEY:MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCZlvFsbXNbePtnjMBQXcX1z52QacU1nB0A4RCftC7nKM6ZVhaM3A5zEIXkGJoVfr2QgBArRJWTGAy/a3BF8C0Ndk/v3AuKkkhQRBPa3kShOc+MvrHZ/TM3qmpUpsYijlnwVSAai4rJFfRqQvyU+4y3i/nzJ7218rZolF5j0C2t4MB7KmvZMlyKB0TuJtHncuvDSViYHdw7EEKrzjxhAy/XfEKtShOicg1Gy5tSgUnNJW+EKKpUEFfx3R4ICiYTjYcgoll6H1deW0fCGeAFerRM+1ECmaIC66608rPhPQnRYvMjN8+JAUAlQNd8ichcdeVerluWg3EgrHHRa+C1fl+vAgMBAAECggEAAKoxGM2NihHpI385Q+GsB5oIXwHNQdEAYV9yYIh5kjRnGi3Pt1puQitN/jzo5/M0/hY30kmJNjWULQSG1I+cMsihhno8gQX11rNXFwOldcGMkcM+m2xFxL8uEB3qr+7XCx3FkKfZj468NkA+Y7Q6sCRZaJfyPPNo+OU1KSbL21nIefcBZvsCGdcoCuA6XB2nl7svw6VXV/+ZYNfZfHtsSvMDskod1BcWTsMvsO/h9N6ayIBwnNcoYRH4/Fg33l/vc06o9GiBMTTkvEkeCpCipW8IHIz5rl1aDjJxqrihDUGegZ5md4i5A7L4HOVjDHIedJEwoTamzwIRgKP/ZCGj9QKBgQDYC8sOvdxO2Pr+TWMqK+Ax0hCpR/YMgMJnzSaeehFbGOgL1uDVyrfHSMiFS1+o0Q88DdwhdFWOfcHMZibBaCDyu+XZvUqgVl+vuDmRE0bADuoiSi2U0UgjM48cosZ7jPWUMlepDMD8YjFnk+JyZUX+GhAcv6WFiQhw96UNCgt34wKBgQC1/krVb3nrDs1DmXyMUqN424X0E3bj4qWVCTw4tzlToB+JItzAzSkL+VHMlI++FhiVrbrtROdP+e8MjHGgYqm0efoGv+S1fKNkpoCKeZ8S47dL0OUxirzwNzr/brcZWI0eBCZiKJP2Mkl+10uTe3SGU7jm6ZBsasM1HA10IkbKxQKBgHHAM9e9K2PwZqbChDXOCCrzGYantur6WGFi6LSEPOMkB/lD1/l41K5+qeVUvDcca9MI0SBkKi/uEr3WAw3OD5r+R5UPT12AXL0eWGEELzosICaRu9IhJsQx/2XqZmri2uJ+Zx1A89Nut+h7Or1UiTey7UzVswbOEb25BhQJd+RVAoGAG0txI8OdUGCe7mWFpXH7bHPYCjwlF5Z1aP3Cl2r7YQxhzmp5Gz1py47v8rPRPxwHQeOVZmJwIrGEZahmnjxN4XBtzDdZcNKpmr3SB3KoJegbJHbG+QAqyAgwhACx205Jk9fhfdVCI6l1Fl3pysu4NTE3SQJ8k5YLgtqbNfCyF1UCgYEAkXQ5j+pSJxprgaFrvXHpFOFJ+d/6gaevTQn/n05kjBEUVxZw04RVYKN1kjo3gQGmQVrWhDXrjwNMXmD5QfUNVzPbRtdbkY+rP7ojezN0VIza9fu+GRhWGWDyUzzYcd/u3KWET4z6FC88CyYodadVF3td5R08IdeVqPIhuwwmQVs=}
+      rsa-public-key: ${JWT_RSA_PUBLIC_KEY:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmZbxbG1zW3j7Z4zAUF3F9c+dkGnFNZwdAOEQn7Qu5yjOmVYWjNwOcxCF5BiaFX69kIAQK0SVkxgMv2twRfAtDXZP79wLipJIUEQT2t5EoTnPjL6x2f0zN6pqVKbGIo5Z8FUgGouKyRX0akL8lPuMt4v58ye9tfK2aJReY9AtreDAeypr2TJcigdE7ibR53Lrw0lYmB3cOxBCq848YQMv13xCrUoTonINRsubUoFJzSVvhCiqVBBX8d0eCAomE42HIKJZeh9XXltHwhngBXq0TPtRApmiAuuutPKz4T0J0WLzIzfPiQFAJUDXfInIXHXlXq5bloNxIKxx0WvgtX5frwIDAQAB}
       # HMAC密钥（当use-rsa=false时使用）
       secret: ${JWT_SECRET:very-long-secret-key-at-least-256-bits-for-production-environment-security}
 

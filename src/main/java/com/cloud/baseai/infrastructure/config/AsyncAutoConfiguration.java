@@ -1,8 +1,10 @@
 package com.cloud.baseai.infrastructure.config;
 
+import com.cloud.baseai.infrastructure.config.base.BaseAutoConfiguration;
 import com.cloud.baseai.infrastructure.config.properties.AsyncProperties;
 import jakarta.annotation.PreDestroy;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -18,6 +20,9 @@ import org.springframework.security.task.DelegatingSecurityContextAsyncTaskExecu
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionHandler;
@@ -29,10 +34,11 @@ import java.util.concurrent.ThreadPoolExecutor;
  * <p>该配置类负责设置应用程序的异步处理能力，所有的执行器
  * 都基于 {@link AsyncProperties} 中定义的配置参数，确保了配置的一致性和可维护性。</p>
  */
-@Slf4j
 @EnableAsync
 @Configuration
-public class AsyncAutoConfiguration {
+public class AsyncAutoConfiguration extends BaseAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(AsyncAutoConfiguration.class);
 
     /**
      * 异步配置属性
@@ -46,7 +52,94 @@ public class AsyncAutoConfiguration {
      */
     public AsyncAutoConfiguration(AsyncProperties asyncProps) {
         this.asyncProps = asyncProps;
-        log.info("AsyncConfiguration 初始化，配置参数: {}", asyncProps);
+
+        // 统一初始化
+        initializeConfiguration();
+    }
+
+    @Override
+    protected String getConfigurationName() {
+        return "异步任务处理";
+    }
+
+    @Override
+    protected String getModuleName() {
+        return "ASYNC";
+    }
+
+    @Override
+    protected void validateConfiguration() {
+        logInfo("开始验证异步配置参数...");
+
+        // 基础参数验证
+        validateNotNull(asyncProps.getCorePoolSize(), "核心线程池大小");
+        validateNotNull(asyncProps.getMaxPoolSize(), "最大线程池大小");
+        validateNotNull(asyncProps.getQueueCapacity(), "队列容量");
+        validateNotNull(asyncProps.getKeepAliveSeconds(), "线程存活时间");
+        validateNotBlank(asyncProps.getThreadNamePrefix(), "线程名称前缀");
+        validateNotBlank(asyncProps.getRejectionPolicy(), "拒绝策略");
+
+        // 数值范围验证
+        validateRange(asyncProps.getCorePoolSize(), 1, 1000, "核心线程池大小");
+        validateRange(asyncProps.getQueueCapacity(), 10, 100000, "队列容量");
+        validateRange(asyncProps.getKeepAliveSeconds(), 10, 3600, "线程存活时间");
+
+        // 逻辑关系验证
+        validateCombination(
+                asyncProps.getMaxPoolSize() >= asyncProps.getCorePoolSize(),
+                "最大线程池大小必须大于等于核心线程池大小"
+        );
+
+        // 拒绝策略验证
+        List<String> validPolicies = List.of("ABORT", "CALLER_RUNS", "DISCARD", "DISCARD_OLDEST");
+        validateEnum(asyncProps.getRejectionPolicy().toUpperCase(), validPolicies, "拒绝策略");
+
+        // 性能建议
+        performanceRecommendations();
+
+        logSuccess("异步配置验证通过");
+    }
+
+    /**
+     * 性能建议
+     */
+    private void performanceRecommendations() {
+        int corePoolSize = asyncProps.getCorePoolSize();
+        int maxPoolSize = asyncProps.getMaxPoolSize();
+        int queueCapacity = asyncProps.getQueueCapacity();
+
+        // CPU核心数
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+
+        if (corePoolSize > cpuCores * 2) {
+            logWarning("核心线程数 (%d) 超过CPU核心数的2倍 (%d)，可能导致过多的上下文切换",
+                    corePoolSize, cpuCores * 2);
+        }
+
+        if (maxPoolSize > cpuCores * 4) {
+            logWarning("最大线程数 (%d) 超过CPU核心数的4倍 (%d)，建议根据业务类型调整",
+                    maxPoolSize, cpuCores * 4);
+        }
+
+        if (queueCapacity < 100) {
+            logWarning("队列容量 (%d) 较小，高并发时可能频繁触发拒绝策略", queueCapacity);
+        }
+
+        logInfo("当前系统CPU核心数: %d，建议配置参考值已输出", cpuCores);
+    }
+
+    @Override
+    protected Map<String, Object> getConfigurationSummary() {
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("核心线程池大小", asyncProps.getCorePoolSize());
+        summary.put("最大线程池大小", asyncProps.getMaxPoolSize());
+        summary.put("队列容量", asyncProps.getQueueCapacity());
+        summary.put("线程名称前缀", asyncProps.getThreadNamePrefix());
+        summary.put("线程存活时间(秒)", asyncProps.getKeepAliveSeconds());
+        summary.put("允许核心线程超时", asyncProps.getAllowCoreThreadTimeout());
+        summary.put("拒绝策略", asyncProps.getRejectionPolicy());
+        summary.put("系统CPU核心数", Runtime.getRuntime().availableProcessors());
+        return summary;
     }
 
     /**
@@ -68,58 +161,61 @@ public class AsyncAutoConfiguration {
     @Primary
     @Bean(name = "taskExecutor")
     public AsyncTaskExecutor taskExecutor() {
-        log.info("开始创建主要异步任务执行器...");
+        logBeanCreation("taskExecutor", "主要异步任务执行器");
 
         ThreadPoolTaskExecutor executor = createBaseExecutor("taskExecutor");
 
         // 使用通用的线程名前缀
         executor.setThreadNamePrefix(asyncProps.getThreadNamePrefix());
 
-        log.info("主要异步任务执行器创建完成: 核心线程={}, 最大线程={}, 队列容量={}",
+        logInfo("主执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d",
                 asyncProps.getCorePoolSize(), asyncProps.getMaxPoolSize(), asyncProps.getQueueCapacity());
 
-        return new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        AsyncTaskExecutor securityAwareExecutor = new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        logBeanSuccess("taskExecutor");
+
+        return securityAwareExecutor;
     }
 
     /**
      * <h3>创建Chat模块专用的异步执行器</h3>
      *
-     * <p>这个执行器专门用于处理Chat相关的异步任务。</p>
-     *
-     * <p>该执行器采用了针对Chat场景优化的配置：较小的核心线程数以降低资源消耗，
+     * <p>这个执行器专门用于处理Chat相关的异步任务。
+     * 该执行器采用了针对Chat场景优化的配置：较小的核心线程数以降低资源消耗，
      * 但具有较高的最大线程数以应对突发的并发需求。</p>
      *
      * @return 配置好的Chat异步任务执行器
      */
     @Bean(name = "chatAsyncExecutor")
     public AsyncTaskExecutor chatAsyncExecutor() {
-        log.info("开始创建Chat模块专用异步执行器...");
+        logBeanCreation("chatAsyncExecutor", "Chat模块专用异步执行器");
 
         ThreadPoolTaskExecutor executor = createBaseExecutor("chatAsyncExecutor");
 
         // 使用较大的最大线程数，以应对聊天高峰期的并发需求
         int chatMaxPoolSize = Math.max(20, asyncProps.getMaxPoolSize());
-        executor.setMaxPoolSize(chatMaxPoolSize);
-
         // 使用较小的核心线程数，因为大部分时间Chat流量相对稳定
         int chatCorePoolSize = Math.max(5, asyncProps.getCorePoolSize() / 2);
-        executor.setCorePoolSize(chatCorePoolSize);
-
         // Chat场景的队列容量：平衡内存使用和响应性
         int chatQueueCapacity = Math.min(100, asyncProps.getQueueCapacity());
+
+        executor.setMaxPoolSize(chatMaxPoolSize);
+        executor.setCorePoolSize(chatCorePoolSize);
         executor.setQueueCapacity(chatQueueCapacity);
 
         // Chat专用的线程名前缀，便于监控和调试
         executor.setThreadNamePrefix("BaseAI-Chat-Async-");
-
         // Chat任务使用调用者运行策略，确保聊天请求不会被丢弃
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
 
-        log.info("Chat异步执行器创建完成: 核心线程={}, 最大线程={}, 队列容量={}",
+        logInfo("Chat执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d",
                 chatCorePoolSize, chatMaxPoolSize, chatQueueCapacity);
 
         // 包装执行器以支持安全上下文传播，确保Chat操作的安全性
-        return new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        AsyncTaskExecutor securityAwareExecutor = new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        logBeanSuccess("chatAsyncExecutor");
+
+        return securityAwareExecutor;
     }
 
     /**
@@ -156,37 +252,37 @@ public class AsyncAutoConfiguration {
      */
     @Bean(name = "fileProcessingExecutor")
     public AsyncTaskExecutor fileProcessingExecutor() {
-        log.info("开始创建文件处理专用异步执行器...");
+        logBeanCreation("fileProcessingExecutor", "文件处理专用异步执行器(IO密集型优化)");
 
         ThreadPoolTaskExecutor executor = createBaseExecutor("fileProcessingExecutor");
 
+        // IO密集型优化配置
         // 最大线程数：IO密集型可以设置更高，通常为CPU核心数的4-6倍
         int fileMaxPoolSize = Math.max(50, asyncProps.getMaxPoolSize() * 2);
-        executor.setMaxPoolSize(fileMaxPoolSize);
-
         // 核心线程数：考虑到IO等待，可以设置为CPU核心数的2-3倍
         int fileCorePoolSize = Math.max(10, asyncProps.getCorePoolSize() * 2);
-        executor.setCorePoolSize(fileCorePoolSize);
-
         // 队列容量：文件处理可能耗时较长，设置较大队列容纳更多任务
         int fileQueueCapacity = Math.max(200, asyncProps.getQueueCapacity() * 2);
+
+        executor.setMaxPoolSize(fileMaxPoolSize);
+        executor.setCorePoolSize(fileCorePoolSize);
         executor.setQueueCapacity(fileQueueCapacity);
 
         // 文件处理专用的线程名前缀，便于监控文件操作
         executor.setThreadNamePrefix("BaseAI-File-Async-");
-
         // 线程存活时间：IO密集型任务间隔可能较长，延长线程存活时间
         executor.setKeepAliveSeconds(Math.max(300, asyncProps.getKeepAliveSeconds()));
-
-        // 文件处理使用调用者运行策略，确保重要的文件操作不会被丢弃
-        // 特别是用户上传的文件，丢失会严重影响用户体验
+        // 文件处理使用调用者运行策略，确保重要的文件操作不会被丢弃，特别是用户上传的文件，丢失会严重影响用户体验
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
 
-        log.info("文件处理异步执行器创建完成: 核心线程={}, 最大线程={}, 队列容量={}, 存活时间={}秒",
+        logInfo("文件处理执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d, 存活时间: %d秒",
                 fileCorePoolSize, fileMaxPoolSize, fileQueueCapacity, executor.getKeepAliveSeconds());
 
         // 包装执行器以支持安全上下文传播，确保文件操作的权限控制
-        return new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        AsyncTaskExecutor securityAwareExecutor = new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        logBeanSuccess("fileProcessingExecutor");
+
+        return securityAwareExecutor;
     }
 
     /**
@@ -223,37 +319,37 @@ public class AsyncAutoConfiguration {
      */
     @Bean(name = "templateProcessingExecutor")
     public AsyncTaskExecutor templateProcessingExecutor() {
-        log.info("开始创建模板处理专用异步执行器...");
+        logBeanCreation("templateProcessingExecutor", "模板处理专用异步执行器(CPU密集型优化)");
 
         ThreadPoolTaskExecutor executor = createBaseExecutor("templateProcessingExecutor");
 
+        // CPU密集型优化配置
         // 最大线程数：对于CPU密集型，不宜设置过高，通常为核心线程数的1.5-2倍
         int templateMaxPoolSize = Math.max(8, (int) (asyncProps.getMaxPoolSize() * 1.5));
-        executor.setMaxPoolSize(templateMaxPoolSize);
-
         // 核心线程数：CPU密集型通常设置为CPU核心数或略少，避免过度竞争
         int templateCorePoolSize = Math.max(4, asyncProps.getCorePoolSize());
-        executor.setCorePoolSize(templateCorePoolSize);
-
         // 队列容量：CPU密集型任务执行时间相对可预测，适中的队列即可
         int templateQueueCapacity = Math.max(50, asyncProps.getQueueCapacity());
+
+        executor.setMaxPoolSize(templateMaxPoolSize);
+        executor.setCorePoolSize(templateCorePoolSize);
         executor.setQueueCapacity(templateQueueCapacity);
 
         // 模板处理专用的线程名前缀，便于监控模板操作性能
         executor.setThreadNamePrefix("BaseAI-Template-Async-");
-
         // 线程存活时间：CPU密集型任务通常连续性较好，可以使用较短的存活时间
         executor.setKeepAliveSeconds(Math.min(60, asyncProps.getKeepAliveSeconds()));
-
-        // 模板处理使用中止策略：当系统过载时，快速失败比延迟处理更好
-        // 这样可以及时发现性能瓶颈并进行优化
+        // 模板处理使用中止策略：当系统过载时，快速失败比延迟处理更好，这样可以及时发现性能瓶颈并进行优化
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
 
-        log.info("模板处理异步执行器创建完成: 核心线程={}, 最大线程={}, 队列容量={}, 存活时间={}秒",
+        logInfo("模板处理执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d, 存活时间: %d秒",
                 templateCorePoolSize, templateMaxPoolSize, templateQueueCapacity, executor.getKeepAliveSeconds());
 
         // 包装执行器以支持安全上下文传播，确保模板处理中的权限检查
-        return new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        AsyncTaskExecutor securityAwareExecutor = new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        logBeanSuccess("templateProcessingExecutor");
+
+        return securityAwareExecutor;
     }
 
     /**
@@ -275,22 +371,80 @@ public class AsyncAutoConfiguration {
     @ConditionalOnMissingBean(name = "auditTaskExecutor")
     @ConditionalOnProperty(prefix = "baseai.async", name = "logging.enable-async", havingValue = "true", matchIfMissing = true)
     public AsyncTaskExecutor auditTaskExecutor() {
-        log.info("开始创建审计专用异步执行器...");
+        logBeanCreation("auditTaskExecutor", "审计专用异步执行器");
 
         ThreadPoolTaskExecutor executor = createBaseExecutor("auditTaskExecutor");
 
         // 审计专用的线程名前缀
         executor.setThreadNamePrefix("BaseAI-Audit-Async-");
-
         // 审计任务使用更保守的拒绝策略，确保任务不会丢失
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
 
-        log.info("审计异步执行器创建完成: 核心线程={}, 最大线程={}, 队列容量={}",
-                asyncProps.getCorePoolSize(), asyncProps.getMaxPoolSize(), asyncProps.getQueueCapacity());
+        logInfo("审计执行器使用保守配置确保数据不丢失");
 
         // 包装执行器以支持安全上下文传播和审计上下文复制
-        return new DelegatingSecurityContextAsyncTaskExecutor(
+        AsyncTaskExecutor auditExecutor = new DelegatingSecurityContextAsyncTaskExecutor(
                 new AuditContextCopyingTaskExecutor(executor));
+
+        logBeanSuccess("auditTaskExecutor");
+        return auditExecutor;
+    }
+
+    /**
+     * <h3>创建流程编排专用的异步执行器</h3>
+     *
+     * <p>这个执行器专门用于处理流程编排相关的异步任务。流程编排采用了以下策略：</p>
+     * <ul>
+     *   <li>中等偏高的线程数配置：平衡IO等待和CPU计算的需求</li>
+     *   <li>较大的队列容量：容纳更多长时间运行的流程任务</li>
+     *   <li>较长的线程存活时间：适应流程间隔可能较长的特点</li>
+     *   <li>调用者运行策略：确保重要业务流程不会被丢弃</li>
+     *   <li>优雅关闭支持：保证流程完整性，避免数据不一致</li>
+     *   <li>安全上下文传播：确保流程执行过程中的权限控制</li>
+     * </ul>
+     *
+     * @return 配置好的流程编排异步任务执行器
+     */
+    @Bean(name = "flowAsyncExecutor")
+    public AsyncTaskExecutor flowAsyncExecutor() {
+        logBeanCreation("flowAsyncExecutor", "流程编排专用异步执行器");
+
+        ThreadPoolTaskExecutor executor = createBaseExecutor("flowAsyncExecutor");
+
+        // 流程编排优化配置
+        // 最大线程数：流程编排可能出现突发的并发需求，设置为核心线程数的2-3倍，这样可以应对流程高峰期，同时避免系统资源过度消耗
+        int flowMaxPoolSize = Math.max(24, asyncProps.getMaxPoolSize() * 3);
+        // 核心线程数：考虑到流程编排的混合特性（IO + CPU），设置为CPU核心数的1.5-2倍，既能处理IO等待，又不会因线程过多导致上下文切换开销
+        int flowCorePoolSize = Math.max(8, (int) (asyncProps.getCorePoolSize() * 1.5));
+        // 队列容量：流程编排任务通常执行时间较长且数量可能较多，设置较大的队列容量以容纳更多待执行的流程
+        int flowQueueCapacity = Math.max(500, asyncProps.getQueueCapacity() * 3);
+
+        executor.setMaxPoolSize(flowMaxPoolSize);
+        executor.setCorePoolSize(flowCorePoolSize);
+        executor.setQueueCapacity(flowQueueCapacity);
+
+        // 流程编排专用的线程名前缀，便于监控和调试流程执行情况
+        executor.setThreadNamePrefix("BaseAI-Flow-Async-");
+        // 线程存活时间：流程编排任务间隔可能较长，延长线程存活时间减少创建销毁开销，同时考虑到流程可能有定时触发的特点
+        executor.setKeepAliveSeconds(Math.max(600, asyncProps.getKeepAliveSeconds() * 2));
+        // 流程编排使用调用者运行策略：确保重要的业务流程不会被丢弃，特别是关键业务流程，丢失可能导致业务中断和数据不一致
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 允许核心线程超时：在流程空闲期间可以释放核心线程，节约系统资源
+        executor.setAllowCoreThreadTimeOut(true);
+        // 优雅关闭配置：给流程充足的时间完成当前步骤，避免数据不一致
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        // 流程编排需要更长的关闭等待时间
+        executor.setAwaitTerminationSeconds(120);
+
+        logInfo("流程编排执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d, 存活时间: %d秒",
+                flowCorePoolSize, flowMaxPoolSize, flowQueueCapacity, executor.getKeepAliveSeconds());
+
+        // 包装执行器以支持安全上下文传播，确保流程执行过程中的权限控制，同时添加流程上下文复制功能，保持流程执行的完整性
+        AsyncTaskExecutor flowExecutor = new DelegatingSecurityContextAsyncTaskExecutor(
+                new FlowContextCopyingTaskExecutor(executor));
+
+        logBeanSuccess("flowAsyncExecutor");
+        return flowExecutor;
     }
 
     /**
@@ -324,7 +478,7 @@ public class AsyncAutoConfiguration {
         // 初始化执行器
         executor.initialize();
 
-        log.debug("{} 基础配置完成", executorName);
+        logInfo("%s 基础配置完成", executorName);
         return executor;
     }
 
@@ -340,7 +494,7 @@ public class AsyncAutoConfiguration {
         int maxPoolSize = asyncProps.getMaxPoolSize();
         if (maxPoolSize <= 0) {
             maxPoolSize = asyncProps.getCorePoolSize() * 2;
-            log.debug("最大线程池大小未配置或无效，使用计算值: {}", maxPoolSize);
+            logInfo("最大线程池大小未配置，使用计算值: %d", maxPoolSize);
         }
         return maxPoolSize;
     }
@@ -363,19 +517,19 @@ public class AsyncAutoConfiguration {
 
         return switch (policy.toUpperCase()) {
             case "CALLER_RUNS" -> {
-                log.debug("使用 CALLER_RUNS 拒绝策略");
+                logInfo("使用 CALLER_RUNS 拒绝策略 - 调用者线程执行");
                 yield new ThreadPoolExecutor.CallerRunsPolicy();
             }
             case "DISCARD" -> {
-                log.debug("使用 DISCARD 拒绝策略");
+                logInfo("使用 DISCARD 拒绝策略 - 静默丢弃任务");
                 yield new ThreadPoolExecutor.DiscardPolicy();
             }
             case "DISCARD_OLDEST" -> {
-                log.debug("使用 DISCARD_OLDEST 拒绝策略");
+                logInfo("使用 DISCARD_OLDEST 拒绝策略 - 丢弃最老任务");
                 yield new ThreadPoolExecutor.DiscardOldestPolicy();
             }
             default -> {
-                log.debug("使用 ABORT 拒绝策略（默认）");
+                logInfo("使用 ABORT 拒绝策略 - 抛出异常（默认）");
                 yield new ThreadPoolExecutor.AbortPolicy();
             }
         };
@@ -389,9 +543,9 @@ public class AsyncAutoConfiguration {
      */
     @PreDestroy
     public void shutdown() {
-        log.info("AsyncConfiguration 开始执行关闭清理...");
-        // 注意：Spring 会自动处理 Bean 的销毁，这里主要用于日志记录
-        log.info("异步配置清理完成");
+        logInfo("开始执行异步配置清理...");
+        // Spring 会自动处理 Bean 的销毁，这里主要用于日志记录
+        logSuccess("异步配置清理完成");
     }
 
     /**
@@ -444,69 +598,6 @@ public class AsyncAutoConfiguration {
                 }
             });
         }
-    }
-
-    /**
-     * <h3>创建流程编排专用的异步执行器</h3>
-     *
-     * <p>这个执行器专门用于处理流程编排相关的异步任务。流程编排采用了以下策略：</p>
-     * <ul>
-     *   <li>中等偏高的线程数配置：平衡IO等待和CPU计算的需求</li>
-     *   <li>较大的队列容量：容纳更多长时间运行的流程任务</li>
-     *   <li>较长的线程存活时间：适应流程间隔可能较长的特点</li>
-     *   <li>调用者运行策略：确保重要业务流程不会被丢弃</li>
-     *   <li>优雅关闭支持：保证流程完整性，避免数据不一致</li>
-     *   <li>安全上下文传播：确保流程执行过程中的权限控制</li>
-     * </ul>
-     *
-     * @return 配置好的流程编排异步任务执行器
-     */
-    @Bean(name = "flowAsyncExecutor")
-    public AsyncTaskExecutor flowAsyncExecutor() {
-        log.info("开始创建流程编排专用异步执行器...");
-
-        ThreadPoolTaskExecutor executor = createBaseExecutor("flowAsyncExecutor");
-
-        // 最大线程数：流程编排可能出现突发的并发需求，设置为核心线程数的2-3倍
-        // 这样可以应对流程高峰期，同时避免系统资源过度消耗
-        int flowMaxPoolSize = Math.max(24, asyncProps.getMaxPoolSize() * 3);
-        executor.setMaxPoolSize(flowMaxPoolSize);
-
-        // 核心线程数：考虑到流程编排的混合特性（IO + CPU），设置为CPU核心数的1.5-2倍
-        // 既能处理IO等待，又不会因线程过多导致上下文切换开销
-        int flowCorePoolSize = Math.max(8, (int) (asyncProps.getCorePoolSize() * 1.5));
-        executor.setCorePoolSize(flowCorePoolSize);
-
-        // 队列容量：流程编排任务通常执行时间较长且数量可能较多
-        // 设置较大的队列容量以容纳更多待执行的流程
-        int flowQueueCapacity = Math.max(500, asyncProps.getQueueCapacity() * 3);
-        executor.setQueueCapacity(flowQueueCapacity);
-
-        // 流程编排专用的线程名前缀，便于监控和调试流程执行情况
-        executor.setThreadNamePrefix("BaseAI-Flow-Async-");
-
-        // 线程存活时间：流程编排任务间隔可能较长，延长线程存活时间减少创建销毁开销
-        // 同时考虑到流程可能有定时触发的特点
-        executor.setKeepAliveSeconds(Math.max(600, asyncProps.getKeepAliveSeconds() * 2));
-
-        // 流程编排使用调用者运行策略：确保重要的业务流程不会被丢弃
-        // 特别是关键业务流程，丢失可能导致业务中断和数据不一致
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
-
-        // 允许核心线程超时：在流程空闲期间可以释放核心线程，节约系统资源
-        executor.setAllowCoreThreadTimeOut(true);
-
-        // 优雅关闭配置：给流程充足的时间完成当前步骤，避免数据不一致
-        executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(120); // 流程编排需要更长的关闭等待时间
-
-        log.info("流程编排异步执行器创建完成: 核心线程={}, 最大线程={}, 队列容量={}, 存活时间={}秒",
-                flowCorePoolSize, flowMaxPoolSize, flowQueueCapacity, executor.getKeepAliveSeconds());
-
-        // 包装执行器以支持安全上下文传播，确保流程执行过程中的权限控制
-        // 同时添加流程上下文复制功能，保持流程执行的完整性
-        return new DelegatingSecurityContextAsyncTaskExecutor(
-                new FlowContextCopyingTaskExecutor(executor));
     }
 
     /**

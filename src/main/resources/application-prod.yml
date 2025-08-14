@@ -40,7 +40,7 @@ baseai:
       enable-blacklist: true
       enable-device-fingerprint: true
     cors:
-      allowed-origins: ${CORS_ALLOWED_ORIGINS}
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:"https://app.baseai.com,https://admin.baseai.com"}
     password:
       enable-complexity-check: true
       enable-weak-password-check: true

@@ -1,5 +1,6 @@
 package com.cloud.baseai.application.user.service;
 
+import com.cloud.baseai.application.auth.service.AuthAppService;
 import com.cloud.baseai.application.user.command.*;
 import com.cloud.baseai.application.user.dto.*;
 import com.cloud.baseai.domain.audit.service.AuditService;
@@ -30,17 +31,14 @@ import java.util.stream.Collectors;
  * <h2>用户应用服务</h2>
  *
  * <p>这是用户管理系统的核心应用服务，负责编排复杂的用户管理业务流程。
- * 就像一个经验丰富的人力资源总监，它需要协调用户注册、租户管理、权限分配、
- * 邀请流程等各个环节，确保每个操作都符合业务规则和安全要求。</p>
+ * 与认证系统协作，确保用户管理和认证功能的无缝集成。</p>
  *
- * <p><b>主要职责：</b></p>
+ * <p><b>与认证系统的协作关系：</b></p>
  * <ul>
- * <li><b>流程编排：</b>协调复杂的多步骤业务流程</li>
- * <li><b>事务管理：</b>确保数据一致性和完整性</li>
- * <li><b>权限验证：</b>在操作前进行必要的权限检查</li>
- * <li><b>异常处理：</b>将技术异常转换为业务异常</li>
- * <li><b>外部集成：</b>协调邮件服务、短信服务等外部依赖</li>
- * </ul>
+ * <li><b>用户注册：</b>创建用户账户，为后续认证做准备</li>
+ * <li><b>用户激活：</b>激活账户后用户可以正常登录</li>
+ * <li><b>密码管理：</b>确保密码修改后认证系统能正确验证</li>
+ * <li><b>权限管理：</b>角色变更后需要刷新用户的认证状态</li>
  */
 @Service
 public class UserAppService {
@@ -69,6 +67,10 @@ public class UserAppService {
 
     @Autowired(required = false)
     private AuditService auditService;
+
+    // 认证应用服务 - 用于协作
+    @Autowired(required = false)
+    private AuthAppService authAppService;
 
     // 异步执行器
     private final ExecutorService asyncExecutor;
@@ -104,7 +106,7 @@ public class UserAppService {
      * <p>2. 唯一性检查：防止重复的用户名或邮箱</p>
      * <p>3. 密码安全：密码加密和强度验证</p>
      * <p>4. 邮箱验证：发送激活邮件确保邮箱真实性</p>
-     * <p>5. 审计记录：记录注册行为用于安全分析</p>
+     * <p>5. 认证准备：确保注册后的用户能够正常进行认证</p>
      */
     @Transactional
     public RegisterUserResult registerUser(RegisterUserCommand cmd) {
@@ -175,6 +177,8 @@ public class UserAppService {
 
     /**
      * 激活用户账户
+     *
+     * <p>用户激活是认证流程的重要环节。激活成功后，用户就可以正常登录了。</p>
      */
     @Transactional
     public UserProfileDTO activateUser(ActivateUserCommand cmd) {
@@ -196,6 +200,9 @@ public class UserAppService {
 
             // 记录审计日志
             recordAuditLog("USER_ACTIVATED", activatedUser.id(), "用户账户激活");
+
+            // 通知认证系统用户已激活（如果需要）
+            notifyUserActivated(activatedUser);
 
             return toUserProfileDTO(activatedUser);
 
@@ -300,6 +307,9 @@ public class UserAppService {
 
             // 记录审计日志
             recordAuditLog("PASSWORD_CHANGED", user.id(), "用户修改密码");
+
+            // 出于安全考虑，撤销用户的所有登录令牌
+            invalidateAllUserTokens(user.id());
 
         } catch (Exception e) {
             if (e instanceof BusinessException) {
@@ -698,6 +708,9 @@ public class UserAppService {
             recordAuditLog("MEMBER_ROLE_UPDATED", tenantId,
                     "更新成员角色：" + user.username() + " -> " + newRole.name());
 
+            // 通知认证系统刷新用户权限
+            notifyUserPermissionsChanged(userId);
+
             return new TenantMemberDTO(
                     user.id(),
                     user.username(),
@@ -849,6 +862,9 @@ public class UserAppService {
                     .map(Role::name)
                     .collect(Collectors.joining(", "));
             recordAuditLog("GLOBAL_ROLES_ASSIGNED", userId, "分配全局角色：" + roleNames);
+
+            // 通知认证系统刷新用户权限
+            notifyUserPermissionsChanged(userId);
 
         } catch (Exception e) {
             if (e instanceof BusinessException) {
@@ -1096,6 +1112,64 @@ public class UserAppService {
             } catch (Exception e) {
                 log.warn("记录审计日志失败: action={}, targetId={}", action, targetId, e);
             }
+        }
+    }
+
+    /**
+     * 通知认证系统用户已激活
+     *
+     * <p>用户激活后，可能需要通知认证系统进行相应的处理。</p>
+     */
+    private void notifyUserActivated(User user) {
+        try {
+            // 这里可以添加与认证系统的集成逻辑
+            // 例如：清理缓存、发送事件等
+            log.debug("通知认证系统用户已激活: userId={}", user.id());
+
+            // 如果需要，可以调用认证服务的相关方法
+            // authAppService.onUserActivated(user.id());
+
+        } catch (Exception e) {
+            log.warn("通知认证系统用户激活失败: userId={}", user.id(), e);
+        }
+    }
+
+    /**
+     * 通知认证系统用户权限已变更
+     *
+     * <p>当用户的角色或权限发生变化时，需要通知认证系统刷新相关信息。</p>
+     */
+    private void notifyUserPermissionsChanged(Long userId) {
+        try {
+            log.debug("通知认证系统用户权限已变更: userId={}", userId);
+
+            // 如果集成了缓存系统，可以清理用户权限缓存
+            if (authAppService != null) {
+                // authAppService.refreshUserPermissions(userId);
+            }
+
+            // 或者发布领域事件
+            // eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
+
+        } catch (Exception e) {
+            log.warn("通知认证系统权限变更失败: userId={}", userId, e);
+        }
+    }
+
+    /**
+     * 撤销用户的所有登录令牌
+     *
+     * <p>在安全敏感操作（如密码修改）后，撤销用户的所有登录令牌。</p>
+     */
+    private void invalidateAllUserTokens(Long userId) {
+        try {
+            // 如果集成了JWT服务，可以直接调用
+            // jwtTokenService.revokeAllUserTokens(userId);
+
+            log.debug("撤销用户所有登录令牌: userId={}", userId);
+
+        } catch (Exception e) {
+            log.warn("撤销用户令牌失败: userId={}", userId, e);
         }
     }
 

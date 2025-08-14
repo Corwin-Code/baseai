@@ -5,24 +5,35 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * <h2>审计工具类</h2>
+ * <h2>审计与脱敏工具类</h2>
  *
  * <p>这个工具类就像是审计系统的"工具箱"，它提供了各种实用的方法
  * 来处理审计相关的常见任务，如数据脱敏、格式转换、验证等。</p>
  *
- * <p><b>设计原则：</b></p>
- * <p>所有的方法都是静态的，无状态的，可以在任何地方安全调用。
- * 方法实现注重性能和健壮性，即使在异常情况下也不会影响主业务流程。</p>
+ * <p><b>特性：</b></p>
+ * <ul>
+ * <li><b>键名识别：</b>支持中文与英文的常见敏感字段（如：密钥/令牌/口令/凭据/URL/端点等）。</li>
+ * <li><b>值级兜底：</b>即便键名不敏感，只要值中出现密钥 Token/Authorization/Bearer、URL 查询敏感参数等，也会被替换。</li>
+ * <li><b>URL 脱敏：</b>仅保留 <code>scheme://host/***</code>，隐藏 path/query/fragment。</li>
+ * <li><b>日志友好：</b>提供 sanitize/sanitizeArgs 用于日志格式化参数统一脱敏。</li>
+ * </ul>
+ *
+ * <p>注意：该类为无状态静态工具，线程安全，可在任意位置直接调用。</p>
  */
-public class AuditUtils {
+public final class AuditUtils {
 
     private static final Logger log = LoggerFactory.getLogger(AuditUtils.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    private AuditUtils() {
+    }
 
     // 敏感信息匹配模式
     private static final Pattern[] SENSITIVE_PATTERNS = {
@@ -34,6 +45,153 @@ public class AuditUtils {
             Pattern.compile("credit.*card", Pattern.CASE_INSENSITIVE),
             Pattern.compile("ssn", Pattern.CASE_INSENSITIVE)
     };
+
+    /* -----------------------------
+     * 键名正则（中文 + 英文常见别名）
+     * ----------------------------- */
+    private static final Pattern KEYNAME_SECRET = Pattern.compile(
+            "(?i)(key|secret|password|token|authorization|credential|client_?secret|access_?key|refresh_?token|passwd|pwd|"
+                    + "密钥|口令|凭据|访问密钥|刷新令牌)"
+    );
+
+    private static final Pattern KEYNAME_URL = Pattern.compile(
+            "(?i)(url|endpoint|address|host|base_?url|base-?url|server|addr|"
+                    + "服务地址|端点|主机|域名|接口地址)"
+    );
+
+    /* -----------------------------
+     * 值级兜底正则（无论键名如何）
+     * ----------------------------- */
+    /**
+     * OpenAI/代理类密钥 sk-/hk-（仅保留前缀和后4位）
+     */
+    private static final Pattern KEY_STYLE = Pattern.compile("\\b(?:sk|hk)-[A-Za-z0-9-_]{8,}\\b");
+    /**
+     * Bearer Token
+     */
+    private static final Pattern BEARER = Pattern.compile("(?i)Bearer\\s+[A-Za-z0-9-_.]{8,}");
+    /**
+     * Authorization: xxxxx
+     */
+    private static final Pattern AUTH_HEADER = Pattern.compile("(?i)(Authorization\\s*:\\s*)([^\\s,;]{8,})");
+    /**
+     * URL 查询中的敏感参数值（token/key/secret/sig 等）
+     */
+    private static final Pattern URL_SECRET_QUERY = Pattern.compile(
+            "([?&](?:key|api[_-]?key|token|access[_-]?token|signature|sig|secret)\\s*=)\\s*([^&\\s#]+)",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    /* ============================================================
+     * API：用于配置摘要（有键名）或任意需要键值对层级脱敏的场景
+     * ============================================================ */
+
+    /**
+     * 对键值对进行综合脱敏：
+     * <ol>
+     *   <li>若键名匹配敏感字段：对值做对应强脱敏（密钥仅留后4位；URL 仅留域名）。</li>
+     *   <li>否则：对值启用模式兜底（sk-/hk-/Bearer/Authorization/URL查询敏感项）。</li>
+     * </ol>
+     *
+     * @param key   字段名（可为中文）
+     * @param value 字段值
+     * @return 已脱敏字符串
+     */
+    public static String sanitize(String key, Object value) {
+        final String original = Objects.toString(value, "null");
+        String v = original;
+
+        // 1) 键名强制脱敏
+        if (key != null) {
+            String k = key.toLowerCase();
+            if (KEYNAME_SECRET.matcher(k).find()) {
+                return maskSecretKeepingPrefix(v);
+            }
+            if (KEYNAME_URL.matcher(k).find()) {
+                return maskUrl(v);
+            }
+        }
+
+        // 2) 值级兜底
+        v = KEY_STYLE.matcher(v).replaceAll(m -> maskSecretKeepingPrefix(m.group()));
+        v = BEARER.matcher(v).replaceAll("Bearer ****");
+        v = AUTH_HEADER.matcher(v).replaceAll("$1****");
+        v = URL_SECRET_QUERY.matcher(v).replaceAll("$1****");
+
+        if (looksLikeUrl(v)) {
+            v = maskUrl(v);
+        }
+        return v;
+    }
+
+    /* =========================================
+     * API：用于日志格式化参数（无键名上下文）
+     * ========================================= */
+
+    /**
+     * 对日志入参进行统一脱敏（无键名上下文），可直接用于 String.format 的 args。
+     *
+     * @param args 原始参数
+     * @return 脱敏后的参数数组
+     */
+    public static Object[] sanitizeArgs(Object... args) {
+        if (args == null || args.length == 0) return args;
+        Object[] out = new Object[args.length];
+        for (int i = 0; i < args.length; i++) {
+            String v = Objects.toString(args[i], "null");
+            v = KEY_STYLE.matcher(v).replaceAll(m -> maskSecretKeepingPrefix(m.group()));
+            v = BEARER.matcher(v).replaceAll("Bearer ****");
+            v = AUTH_HEADER.matcher(v).replaceAll("$1****");
+            v = URL_SECRET_QUERY.matcher(v).replaceAll("$1****");
+            if (looksLikeUrl(v)) v = maskUrl(v);
+            out[i] = v;
+        }
+        return out;
+    }
+
+    /* =========================
+     * 具体脱敏策略
+     * ========================= */
+
+    /**
+     * 密钥仅保留 sk-/hk- 前缀与后4位。
+     *
+     * @param s 原密钥
+     * @return 脱敏密钥
+     */
+    public static String maskSecretKeepingPrefix(String s) {
+        if (s == null || s.isEmpty()) return "****";
+        String prefix = "";
+        if (s.startsWith("sk-") || s.startsWith("hk-")) {
+            prefix = s.substring(0, 3);
+            s = s.substring(3);
+        }
+        int n = s.length();
+        if (n <= 4) return prefix + "****";
+        return prefix + "****" + s.substring(n - 4);
+    }
+
+    /**
+     * URL 仅保留 scheme://host/***，隐藏 path/query/fragment。
+     *
+     * @param url 原 URL
+     * @return 脱敏后的 URL 描述
+     */
+    public static String maskUrl(String url) {
+        if (url == null || url.isEmpty()) return "***";
+        try {
+            URI u = URI.create(url);
+            String scheme = u.getScheme() != null ? u.getScheme() : "http";
+            String host = u.getHost() != null ? u.getHost() : "";
+            if (!host.isEmpty()) return scheme + "://" + host + "/***";
+        } catch (Exception ignored) {
+        }
+        return "***";
+    }
+
+    private static boolean looksLikeUrl(String s) {
+        return s.startsWith("http://") || s.startsWith("https://");
+    }
 
     /**
      * 脱敏敏感数据
@@ -98,6 +256,10 @@ public class AuditUtils {
         // 保留前2位和后2位，中间用星号替换
         return str.substring(0, 2) + "****" + str.substring(str.length() - 2);
     }
+
+    /* ============================================================
+     * 其余辅助能力（JSON 安全序列化/反序列化等）
+     * ============================================================ */
 
     /**
      * 安全地序列化对象为JSON

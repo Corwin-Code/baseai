@@ -1,5 +1,6 @@
 package com.cloud.baseai.infrastructure.config;
 
+import com.cloud.baseai.infrastructure.config.base.BaseAutoConfiguration;
 import com.cloud.baseai.infrastructure.config.properties.KnowledgeBaseProperties;
 import com.cloud.baseai.infrastructure.config.properties.LlmProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,9 +20,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.retry.backoff.ExponentialBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.retry.support.RetryTemplate;
-import org.springframework.util.Assert;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * <h2>Anthropic大语言模型服务的Spring自动配置类</h2>
@@ -41,19 +45,31 @@ import org.springframework.web.client.RestTemplate;
  */
 @Configuration
 @ConditionalOnProperty(prefix = "baseai.llm.anthropic", name = "enabled", havingValue = "true", matchIfMissing = false)
-public class AnthropicAutoConfiguration {
+public class AnthropicAutoConfiguration extends BaseAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicAutoConfiguration.class);
 
     private final KnowledgeBaseProperties kbProps;
     private final LlmProperties llmProps;
+    private final LlmProperties.AnthropicProperties anthropicConfig;
 
     public AnthropicAutoConfiguration(KnowledgeBaseProperties kbProps, LlmProperties llmProps) {
         this.kbProps = kbProps;
         this.llmProps = llmProps;
+        this.anthropicConfig = llmProps.getAnthropic();
 
-        // 配置验证
-        validateAnthropicConfiguration();
+        // 统一初始化
+        initializeConfiguration();
+    }
+
+    @Override
+    protected String getConfigurationName() {
+        return "Anthropic Claude AI";
+    }
+
+    @Override
+    protected String getModuleName() {
+        return "ANTHROPIC";
     }
 
     /**
@@ -62,27 +78,107 @@ public class AnthropicAutoConfiguration {
      * <p>在Bean创建前验证所有必要的配置参数，确保服务能够正常启动。
      * Anthropic的API密钥格式和认证方式需要特别验证。</p>
      */
-    private void validateAnthropicConfiguration() {
-        LlmProperties.AnthropicProperties anthropicConfig = llmProps.getAnthropic();
+    @Override
+    protected void validateConfiguration() {
+        logInfo("开始验证Anthropic配置参数...");
 
-        Assert.hasText(anthropicConfig.getApiKey(), "Anthropic API密钥不能为空");
-        Assert.hasText(anthropicConfig.getBaseUrl(), "Anthropic BaseURL不能为空");
-        Assert.notNull(anthropicConfig.getTimeout(), "Anthropic超时时间不能为空");
-        Assert.isTrue(anthropicConfig.getMaxRetries() > 0, "Anthropic重试次数必须大于0");
-        Assert.notEmpty(anthropicConfig.getModels(), "Anthropic支持的模型列表不能为空");
+        // 基础配置验证
+        validateNotBlank(anthropicConfig.getApiKey(), "Anthropic API密钥");
+        validateNotBlank(anthropicConfig.getBaseUrl(), "Anthropic BaseURL");
+        validateNotNull(anthropicConfig.getTimeout(), "Anthropic超时时间");
+        validatePositive(anthropicConfig.getMaxRetries(), "Anthropic重试次数");
+        validateNotEmpty(anthropicConfig.getModels(), "Anthropic支持的模型列表");
 
-        // 验证API密钥格式（Anthropic密钥通常以sk-ant-开头）
+        // URL格式验证
+        validateUrl(anthropicConfig.getBaseUrl(), "Anthropic BaseURL");
+
+        // API密钥格式验证
         if (!anthropicConfig.getApiKey().startsWith("sk-ant-")) {
-            log.warn("Anthropic API密钥格式可能不正确，通常以'sk-ant-'开头");
+            logWarning("API密钥格式可能不正确，标准格式应以 'sk-ant-' 开头");
         }
 
-        // 验证baseUrl
+        // BaseURL验证
         if (!anthropicConfig.getBaseUrl().contains("anthropic.com")) {
-            log.warn("Anthropic BaseURL可能不正确，请确认是否为Anthropic官方API地址");
+            logWarning("BaseURL可能不是Anthropic官方地址，请确认配置正确");
         }
 
-        log.info("Anthropic配置验证通过: baseUrl={}, models={}",
-                anthropicConfig.getBaseUrl(), anthropicConfig.getModels());
+        // 超时时间验证
+        validateTimeout(anthropicConfig.getTimeout(), "请求超时时间");
+        if (anthropicConfig.getTimeout().toMinutes() > 5) {
+            logWarning("超时时间设置过长 (%s)，可能影响用户体验", anthropicConfig.getTimeout());
+        }
+
+        // 重试次数验证
+        validateRange(anthropicConfig.getMaxRetries(), 1, 10, "最大重试次数");
+
+        // 模型列表验证
+        validateModelList();
+
+        // 默认参数验证
+        validateDefaultParameters();
+
+        logSuccess("所有配置验证通过");
+    }
+
+    /**
+     * 验证模型列表
+     */
+    private void validateModelList() {
+        List<String> supportedModels = List.of(
+                "claude-3-haiku-20240307",
+                "claude-3-sonnet-20240229",
+                "claude-3-opus-20240229",
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-sonnet-20240620"
+        );
+
+        for (String model : anthropicConfig.getModels()) {
+            if (!supportedModels.contains(model)) {
+                logWarning("模型 '%s' 可能不受支持，支持的模型: %s", model, supportedModels);
+            }
+        }
+    }
+
+    /**
+     * 验证默认参数
+     */
+    private void validateDefaultParameters() {
+        LlmProperties.DefaultParametersProperties defaults = llmProps.getDefaultParameters();
+
+        // 温度参数验证
+        if (defaults.getTemperature() != null) {
+            validateRange(defaults.getTemperature().intValue(), 0, 1, "温度参数");
+        }
+
+        // 最大令牌数验证
+        if (defaults.getMaxTokens() != null) {
+            validateRange(defaults.getMaxTokens(), 1, 100000, "最大令牌数");
+        }
+
+        // Top-p参数验证
+        if (defaults.getTopP() != null) {
+            validateRange(defaults.getTopP().intValue(), 0, 1, "Top-p参数");
+        }
+    }
+
+    @Override
+    protected Map<String, Object> getConfigurationSummary() {
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("启用状态", anthropicConfig.getEnabled());
+        summary.put("服务地址", anthropicConfig.getBaseUrl());
+        summary.put("API密钥", anthropicConfig.getApiKey());
+        summary.put("超时时间", anthropicConfig.getTimeout());
+        summary.put("最大重试次数", anthropicConfig.getMaxRetries());
+        summary.put("支持的模型数量", anthropicConfig.getModels().size());
+        summary.put("支持的模型", anthropicConfig.getModels());
+
+        // 默认参数
+        LlmProperties.DefaultParametersProperties defaults = llmProps.getDefaultParameters();
+        summary.put("默认模型", defaults.getModel());
+        summary.put("默认温度", defaults.getTemperature());
+        summary.put("默认最大令牌数", defaults.getMaxTokens());
+
+        return summary;
     }
 
     /**
@@ -96,10 +192,7 @@ public class AnthropicAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(AnthropicApi.class)
     public AnthropicApi customAnthropicApi() {
-        LlmProperties.AnthropicProperties anthropicConfig = llmProps.getAnthropic();
-
-        log.info("创建自定义Anthropic API: baseUrl={}, timeout={}",
-                anthropicConfig.getBaseUrl(), anthropicConfig.getTimeout());
+        logBeanCreation("AnthropicApi", "Anthropic API客户端");
 
         try {
             // 创建自定义RestTemplate
@@ -122,12 +215,13 @@ public class AnthropicAutoConfiguration {
                     .restClientBuilder(restClientBuilder)
                     .build();
 
-            log.info("Anthropic API创建成功");
+            logBeanSuccess("AnthropicApi");
             return api;
 
         } catch (Exception e) {
-            log.error("创建Anthropic API失败", e);
-            throw new IllegalStateException("无法创建Anthropic API", e);
+            String errorMsg = String.format("创建AnthropicApi失败: %s", e.getMessage());
+            log.error("❌ [{}] {}", getModuleName(), errorMsg, e);
+            throw new IllegalStateException(errorMsg, e);
         }
     }
 
@@ -141,24 +235,29 @@ public class AnthropicAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "anthropicChatOptions")
     public AnthropicChatOptions anthropicChatOptions() {
+        logBeanCreation("AnthropicChatOptions", "Anthropic聊天模型选项");
+
         LlmProperties.DefaultParametersProperties defaults = llmProps.getDefaultParameters();
 
         // 确保使用Anthropic兼容的模型
         String defaultModel = defaults.getModel();
         if (defaultModel == null || !defaultModel.startsWith("claude-")) {
             defaultModel = "claude-3-sonnet-20240229"; // 使用Anthropic的默认模型
-            log.warn("配置的默认模型不兼容Anthropic，使用默认模型: {}", defaultModel);
+            logWarning("配置的默认模型不兼容Anthropic，使用默认模型: %s", defaultModel);
         }
 
-        log.info("创建Anthropic聊天选项: model={}, temperature={}, maxTokens={}",
-                defaultModel, defaults.getTemperature(), defaults.getMaxTokens());
-
-        return AnthropicChatOptions.builder()
+        AnthropicChatOptions options = AnthropicChatOptions.builder()
                 .model(defaultModel)
                 .temperature(defaults.getTemperature())
                 .maxTokens(defaults.getMaxTokens())
                 .topP(defaults.getTopP())
                 .build();
+
+        logInfo("聊天选项配置 - 模型: %s, 温度: %s, 最大令牌: %s",
+                defaultModel, defaults.getTemperature(), defaults.getMaxTokens());
+
+        logBeanSuccess("AnthropicChatOptions");
+        return options;
     }
 
     /**
@@ -174,9 +273,9 @@ public class AnthropicAutoConfiguration {
     @Bean(name = "anthropicRetryTemplate")
     @ConditionalOnProperty(prefix = "baseai.llm.anthropic", name = "max-retries", matchIfMissing = false)
     public RetryTemplate anthropicRetryTemplate() {
-        int maxRetries = llmProps.getAnthropic().getMaxRetries();
+        logBeanCreation("AnthropicRetryTemplate", "Anthropic重试策略模板");
 
-        log.info("配置Anthropic重试策略: maxRetries={}", maxRetries);
+        int maxRetries = anthropicConfig.getMaxRetries();
 
         RetryTemplate retryTemplate = new RetryTemplate();
 
@@ -192,6 +291,9 @@ public class AnthropicAutoConfiguration {
         backOffPolicy.setMultiplier(2.0);       // 每次重试间隔翻倍
         retryTemplate.setBackOffPolicy(backOffPolicy);
 
+        logInfo("重试策略配置 - 最大重试: %d次, 初始间隔: 2秒, 最大间隔: 30秒", maxRetries);
+        logBeanSuccess("AnthropicRetryTemplate");
+
         return retryTemplate;
     }
 
@@ -201,7 +303,7 @@ public class AnthropicAutoConfiguration {
     @Bean(name = "anthropicRetryTemplate")
     @ConditionalOnMissingBean(name = "anthropicRetryTemplate")
     public RetryTemplate anthropicDefaultRetryTemplate() {
-        log.info("使用Spring AI默认重试策略 (Anthropic)");
+        logBeanCreation("AnthropicDefaultRetryTemplate", "Anthropic默认重试策略");
 
         // 创建一个基本的重试模板
         RetryTemplate retryTemplate = new RetryTemplate();
@@ -215,6 +317,9 @@ public class AnthropicAutoConfiguration {
         backOffPolicy.setMaxInterval(30000);
         backOffPolicy.setMultiplier(2.0);
         retryTemplate.setBackOffPolicy(backOffPolicy);
+
+        logInfo("使用默认重试策略 - 最大重试: 2次");
+        logBeanSuccess("AnthropicDefaultRetryTemplate");
 
         return retryTemplate;
     }
@@ -237,7 +342,7 @@ public class AnthropicAutoConfiguration {
             AnthropicChatOptions chatOptions,
             RetryTemplate anthropicRetryTemplate) {
 
-        log.info("创建自定义Anthropic聊天模型");
+        logBeanCreation("AnthropicChatModel", "Anthropic聊天模型主Bean");
 
         try {
             // 使用Builder模式创建聊天模型
@@ -247,12 +352,15 @@ public class AnthropicAutoConfiguration {
                     .retryTemplate(anthropicRetryTemplate)
                     .build();
 
-            log.info("Anthropic聊天模型创建成功");
+            logBeanSuccess("AnthropicChatModel");
+            logSuccess("Anthropic聊天服务已就绪，可以开始对话");
+
             return chatModel;
 
         } catch (Exception e) {
-            log.error("创建Anthropic聊天模型失败", e);
-            throw new IllegalStateException("无法创建Anthropic聊天模型", e);
+            String errorMsg = String.format("创建AnthropicChatModel失败: %s", e.getMessage());
+            log.error("❌ [{}] {}", getModuleName(), errorMsg, e);
+            throw new IllegalStateException(errorMsg, e);
         }
     }
 
@@ -264,6 +372,7 @@ public class AnthropicAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(ObjectMapper.class)
     public ObjectMapper objectMapper() {
+        logBeanCreation("ObjectMapper", "JSON对象映射器");
         return new ObjectMapper();
     }
 
@@ -277,6 +386,7 @@ public class AnthropicAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(RestTemplate.class)
     public RestTemplate restTemplate() {
+        logBeanCreation("RestTemplate", "REST客户端模板");
         return new RestTemplateBuilder()
                 .connectTimeout(llmProps.getAnthropic().getTimeout())
                 .readTimeout(llmProps.getAnthropic().getTimeout())

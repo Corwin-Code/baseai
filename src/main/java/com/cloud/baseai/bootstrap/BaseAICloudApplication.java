@@ -10,7 +10,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication(scanBasePackages = "com.cloud.baseai")
 public class BaseAICloudApplication {
-
     /**
      * 项目启动入口。
      *
@@ -19,5 +18,4 @@ public class BaseAICloudApplication {
     public static void main(String[] args) {
         SpringApplication.run(BaseAICloudApplication.class, args);
     }
-
 }

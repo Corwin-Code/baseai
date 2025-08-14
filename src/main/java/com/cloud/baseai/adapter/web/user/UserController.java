@@ -70,15 +70,15 @@ public class UserController {
     /**
      * 用户注册
      *
-     * <p>用户注册是整个用户旅程的起点。这个过程不仅仅是创建一个账户，
-     * 更是建立用户与系统之间信任关系的开始。我们会进行各种验证：
-     * 邮箱格式、密码强度、用户名唯一性等，确保每个新用户都能安全地加入我们的平台。</p>
+     * <p>用户注册是整个用户旅程的起点。这个过程创建用户账户，
+     * 为后续的认证和授权建立基础。注册成功后，用户需要通过邮箱激活账户，
+     * 然后就可以通过认证系统进行登录。</p>
      */
     @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(
             summary = "用户注册",
-            description = "创建新用户账户。支持邮箱验证、密码强度检查和用户名唯一性验证。"
+            description = "创建新用户账户。支持邮箱验证、密码强度检查和用户名唯一性验证。注册成功后用户需要激活账户才能登录。"
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "用户注册成功",
@@ -118,18 +118,21 @@ public class UserController {
      * 激活用户账户
      */
     @PostMapping("/activate")
-    @Operation(summary = "激活用户账户", description = "通过邮箱验证码激活新注册的用户账户。")
+    @Operation(summary = "激活用户账户", description = "通过邮箱验证码激活新注册的用户账户。激活后用户可正常登录。")
     public ResponseEntity<ApiResult<UserProfileDTO>> activateUser(
             @Valid @RequestBody ActivateUserCommand cmd) {
 
         log.info("用户激活请求: email={}", cmd.email());
 
         UserProfileDTO result = userAppService.activateUser(cmd);
-        return ResponseEntity.ok(ApiResult.success(result, "账户激活成功"));
+        return ResponseEntity.ok(ApiResult.success(result, "账户激活成功，您现在可以登录了"));
     }
 
     /**
      * 获取当前用户信息
+     *
+     * <p>获取当前认证用户的详细资料信息。这个接口依赖于认证系统
+     * 提供的用户身份信息。</p>
      */
     @GetMapping("/profile")
     @Operation(summary = "获取用户资料", description = "获取当前登录用户的详细资料信息。")
@@ -160,9 +163,12 @@ public class UserController {
 
     /**
      * 修改密码
+     *
+     * <p>密码修改会影响认证系统的验证逻辑。修改成功后，
+     * 认证系统会使用新密码进行后续的登录验证。</p>
      */
     @PostMapping("/password/change")
-    @Operation(summary = "修改密码", description = "用户主动修改账户密码，需要验证原密码。")
+    @Operation(summary = "修改密码", description = "用户主动修改账户密码，需要验证原密码。修改后需要重新登录。")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResult<Void>> changePassword(
             @Valid @RequestBody ChangePasswordCommand cmd) {
@@ -170,7 +176,7 @@ public class UserController {
         log.info("用户修改密码: userId={}", cmd.userId());
 
         userAppService.changePassword(cmd);
-        return ResponseEntity.ok(ApiResult.success(null, "密码修改成功"));
+        return ResponseEntity.ok(ApiResult.success(null, "密码修改成功，请重新登录"));
     }
 
     // =================== 租户管理 ===================
@@ -180,7 +186,7 @@ public class UserController {
      *
      * <p>创建租户是一个重要的业务操作，它代表着一个新的组织加入我们的平台。
      * 这个过程涉及初始化组织的基础数据、分配默认的管理员权限、
-     * 设置基础配置等多个步骤，就像为新公司设立完整的办公环境。</p>
+     * 设置基础配置等多个步骤。</p>
      */
     @PostMapping(value = "/tenants", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
@@ -256,9 +262,8 @@ public class UserController {
     /**
      * 邀请成员
      *
-     * <p>邀请新成员是团队建设的重要环节。我们的邀请机制既要保证安全性，
-     * 又要提供良好的用户体验。被邀请人会收到包含邀请链接的邮件，
-     * 可以选择接受或拒绝邀请。</p>
+     * <p>邀请新成员是团队建设的重要环节。被邀请人会收到包含邀请链接的邮件，
+     * 可以选择接受或拒绝邀请。接受邀请后，用户就可以使用该租户的权限进行登录。</p>
      */
     @PostMapping("/tenants/{tenantId}/members/invite")
     @Operation(
@@ -314,9 +319,12 @@ public class UserController {
 
     /**
      * 更新成员角色
+     *
+     * <p>角色变更会影响用户的权限。更新成功后，认证系统会在用户下次访问时
+     * 使用新的权限信息进行授权检查。</p>
      */
     @PutMapping("/tenants/{tenantId}/members/{userId}/role")
-    @Operation(summary = "更新成员角色", description = "修改租户内某个成员的角色权限。")
+    @Operation(summary = "更新成员角色", description = "修改租户内某个成员的角色权限。角色变更后用户权限将实时更新。")
     @PreAuthorize("hasPermission(#tenantId, 'TENANT', 'MANAGE_MEMBERS')")
     public ResponseEntity<ApiResult<TenantMemberDTO>> updateMemberRole(
             @PathVariable Long tenantId,
@@ -353,8 +361,8 @@ public class UserController {
     /**
      * 获取系统角色列表
      *
-     * <p>角色是权限管理的核心概念。就像军队中的军衔制度一样，
-     * 不同的角色拥有不同的权限和责任。我们的角色系统支持灵活的权限组合。</p>
+     * <p>角色是权限管理的核心概念。这个接口返回系统中所有可用的角色，
+     * 这些角色可以在认证系统中用于权限检查。</p>
      */
     @GetMapping("/roles")
     @Operation(summary = "获取角色列表", description = "获取系统中所有可用的角色及其权限描述。")
@@ -379,9 +387,12 @@ public class UserController {
 
     /**
      * 分配全局角色
+     *
+     * <p>全局角色分配会影响用户在整个系统中的权限。
+     * 分配成功后，认证系统会使用新的角色信息进行权限检查。</p>
      */
     @PostMapping("/{userId}/roles")
-    @Operation(summary = "分配全局角色", description = "为用户分配系统级别的角色权限。需要超级管理员权限。")
+    @Operation(summary = "分配全局角色", description = "为用户分配系统级别的角色权限。需要超级管理员权限。角色变更将实时生效。")
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResult<Void>> assignGlobalRoles(
             @PathVariable Long userId,

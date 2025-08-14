@@ -24,6 +24,7 @@ baseai:
   llm:
     openai:
       base-url: https://api.openai-hk.com/v1
+      timeout: "PT5M"
 
   # 开发环境降低安全要求
   security:
@@ -32,7 +33,7 @@ baseai:
       secret: dev-secret-key-for-development-only-not-for-production
       access-token-expiration: 86400000  # 24小时
     cors:
-      allowed-origins: "http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000"
+      allowed-origins: "*"
     auth:
       enable-multi-device: true
       enable-captcha: false
@@ -60,3 +61,7 @@ baseai:
       await-termination-seconds: 10
     monitoring:
       enabled: true
+
+  audit:
+    logging:
+      enable-async: false # 开发环境同步处理，便于调试
