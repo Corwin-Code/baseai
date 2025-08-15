@@ -119,8 +119,13 @@ public class ChatModelFactory implements ChatCompletionService {
             throw new ChatException(ErrorCode.EXT_LLM_001);
         }
 
-        log.info("聊天模型工厂初始化完成: 注册服务数={}, 提供商={}, 可用模型={}",
-                registeredServices, providerServices.keySet(), modelToProvider.keySet());
+        log.info("聊天模型工厂初始化完成: 注册服务数={}, 提供商={}, 总模型数={}, 负载均衡策略={}, 故障转移={}",
+                registeredServices, providerServices.keySet(),
+                modelToProvider.size(),
+                llmProperties.getLoadBalancing(),
+                llmProperties.getFailoverEnabled());
+
+        log.debug("可用模型清单: {}", modelToProvider.keySet());
     }
 
     // =================== ChatCompletionService 接口实现 ===================
@@ -395,7 +400,7 @@ public class ChatModelFactory implements ChatCompletionService {
             ChatCompletionService openAiService = applicationContext.getBean(
                     "openAIChatCompletionService", ChatCompletionService.class);
             registerProvider("openai", openAiService, llmProperties.getOpenai().getModels());
-            log.info("成功注册OpenAI服务: models={}", llmProperties.getOpenai().getModels());
+//            log.info("成功注册OpenAI服务: models={}", llmProperties.getOpenai().getModels());
             return 1;
         } catch (Exception e) {
             log.warn("OpenAI服务注册失败: {}", e.getMessage());
@@ -411,7 +416,7 @@ public class ChatModelFactory implements ChatCompletionService {
             ChatCompletionService anthropicService = applicationContext.getBean(
                     "anthropicChatCompletionService", ChatCompletionService.class);
             registerProvider("anthropic", anthropicService, llmProperties.getAnthropic().getModels());
-            log.info("成功注册Anthropic服务: models={}", llmProperties.getAnthropic().getModels());
+//            log.info("成功注册Anthropic服务: models={}", llmProperties.getAnthropic().getModels());
             return 1;
         } catch (Exception e) {
             log.warn("Anthropic服务注册失败: {}", e.getMessage());
@@ -427,7 +432,7 @@ public class ChatModelFactory implements ChatCompletionService {
             ChatCompletionService qwenService = applicationContext.getBean(
                     "qwenChatCompletionService", ChatCompletionService.class);
             registerProvider("qwen", qwenService, llmProperties.getQwen().getModels());
-            log.info("成功注册通义千问服务: models={}", llmProperties.getQwen().getModels());
+//            log.info("成功注册通义千问服务: models={}", llmProperties.getQwen().getModels());
             return 1;
         } catch (Exception e) {
             log.warn("通义千问服务注册失败: {}", e.getMessage());
@@ -442,9 +447,22 @@ public class ChatModelFactory implements ChatCompletionService {
         providerServices.put(providerName, service);
 
         // 注册该提供商支持的所有模型
+        List<String> conflicts = new ArrayList<>();
         for (String model : models) {
-            modelToProvider.put(model, providerName);
-            log.debug("注册模型映射: {} -> {}", model, providerName);
+            String old = modelToProvider.putIfAbsent(model, providerName);
+            if (old != null && !old.equals(providerName)) {
+                conflicts.add(model + "(" + old + "->" + providerName + ")");
+                modelToProvider.put(model, providerName); // 明确覆盖
+            }
+        }
+
+        // 生产更友好：INFO 打简洁摘要，DEBUG/TRACE 打细节
+        log.info("成功注册{}服务: modelCount={}, provider={}",
+                providerName, models.size(), providerName);
+        log.debug("注册模型映射详情({}): {}", providerName, models);
+
+        if (!conflicts.isEmpty()) {
+            log.warn("模型名冲突并已处理: {}", conflicts);
         }
     }
 

@@ -1,9 +1,5 @@
 # 开发环境配置
 spring:
-  config:
-    activate:
-      on-profile: dev
-
   # 开发环境数据库配置
   jpa:
     show-sql: true

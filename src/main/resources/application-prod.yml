@@ -1,14 +1,16 @@
 # =================== 生产环境专用配置 ===================
 spring:
-  config:
-    activate:
-      on-profile: prod
-
+  jmx:
+    enabled: false  # 彻底关掉 JVM JMX 暴露（生产）
   # 生产环境数据库配置
   jpa:
     show-sql: false
     hibernate:
       ddl-auto: validate
+  security:
+    user:
+      name: username
+      password: password
 
 # 生产环境日志配置
 logging:
@@ -41,11 +43,16 @@ baseai:
       enable-device-fingerprint: true
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:"https://app.baseai.com,https://admin.baseai.com"}
+      allowed-methods: [GET,POST,PUT,DELETE,OPTIONS]
+      allowed-headers: [Authorization,Content-Type,X-Requested-With,X-Device-Fingerprint]
+      exposed-headers: [Location]
+      allow-credentials: true
     password:
       enable-complexity-check: true
       enable-weak-password-check: true
-      lockout-threshold: 3
-      lockout-duration-minutes: 60
+      min-length: 10
+      lockout-threshold: 5
+      lockout-duration-minutes: 15
     auth:
       enable-captcha: true
       captcha-threshold: 2
@@ -82,12 +89,22 @@ baseai:
 
 # 生产环境监控配置
 management:
+  server:
+    port: 8081            # 管理端口与业务口分离
+    address: 127.0.0.1    # 仅本机/内网监听，或改成内网IP
   endpoints:
     web:
+      base-path: /actuator
       exposure:
-        # 生产环境限制暴露的端点
-        include: health,metrics,info
+        # 生产环境限制暴露的端点，仅只读端点
+        include: health,metrics,info,prometheus
+
   endpoint:
     health:
       # 生产环境可能不希望暴露详细信息
       show-details: when-authorized
+      roles: ACTUATOR
+  prometheus:
+    metrics:
+      export:
+        enabled: true

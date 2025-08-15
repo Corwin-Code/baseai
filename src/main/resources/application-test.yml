@@ -1,9 +1,4 @@
 # =================== 测试环境专用配置 ===================
-spring:
-  config:
-    activate:
-      on-profile: test
-
 # 测试环境日志配置
 logging:
   level:
