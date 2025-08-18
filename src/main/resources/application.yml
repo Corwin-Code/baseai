@@ -304,6 +304,8 @@ baseai:
       enable-complexity-check: true
       # 启用弱密码检测
       enable-weak-password-check: true
+      # 启用密码泄露检查
+      enable-breach-check: true
 
     # 认证相关配置
     auth:
@@ -329,6 +331,12 @@ baseai:
       enable-two-factor-auth: false
       # 二次验证代码有效期
       two-factor-code-expiration: 300
+      # 是否启用登录异常检测
+      enable-anomaly-detection: true
+      # 是否记录登录历史
+      enable-login-history: true
+      # 登录历史保留天数
+      login-history-retention-days: 90
 
   # ========== 速率限制配置 ==========
   rate-limit:

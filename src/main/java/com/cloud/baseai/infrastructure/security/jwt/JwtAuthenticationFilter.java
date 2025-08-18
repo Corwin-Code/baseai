@@ -1,13 +1,16 @@
 package com.cloud.baseai.infrastructure.security.jwt;
 
+import com.cloud.baseai.infrastructure.config.properties.SecurityProperties;
 import com.cloud.baseai.infrastructure.security.UserPrincipal;
 import com.cloud.baseai.infrastructure.security.service.CustomUserDetailsService;
+import com.cloud.baseai.infrastructure.security.service.LoginProtectionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,6 +22,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * <h1>JWT认证过滤器</h1>
@@ -55,17 +61,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String TOKEN_PARAM = "token";
     private static final String CUSTOM_TOKEN_HEADER = "X-Auth-Token";
+    private static final String DEVICE_FINGERPRINT_HEADER = "X-Device-Fingerprint";
+    private static final String REQUEST_ID_HEADER = "X-Request-Id";
+
+    // 白名单路径（不需要认证的路径）
+    private static final Set<String> PUBLIC_PATHS = new HashSet<>(Arrays.asList(
+            "/api/v1/auth/login",
+            "/api/v1/auth/refresh",
+            "/api/v1/users/register",
+            "/api/v1/users/activate",
+            "/api/v1/health",
+            "/actuator/health"
+    ));
 
     private final JwtTokenService jwtTokenService;
     private final CustomUserDetailsService userDetailsService;
+    private final SecurityProperties securityProperties;
+    private final LoginProtectionService loginProtectionService;
 
     /**
      * 构造函数，注入依赖的服务
      */
     public JwtAuthenticationFilter(JwtTokenService jwtTokenService,
-                                   CustomUserDetailsService userDetailsService) {
+                                   CustomUserDetailsService userDetailsService,
+                                   SecurityProperties securityProperties,
+                                   LoginProtectionService loginProtectionService) {
         this.jwtTokenService = jwtTokenService;
         this.userDetailsService = userDetailsService;
+        this.securityProperties = securityProperties;
+        this.loginProtectionService = loginProtectionService;
     }
 
     /**
@@ -82,6 +106,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String requestURI = request.getRequestURI();
         String method = request.getMethod();
+        String requestId = getOrGenerateRequestId(request);
+
+        // 设置MDC用于日志追踪
+        MDC.put("requestId", requestId);
+        MDC.put("requestUri", requestURI);
 
         // 记录请求信息（仅在调试模式下）
         if (log.isDebugEnabled()) {
@@ -89,33 +118,100 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
+            // 快速跳过公开路径
+            if (isPublicPath(requestURI)) {
+                log.debug("公开路径，跳过JWT认证: {}", requestURI);
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            // 检查是否已经认证（避免重复处理）
+            if (SecurityContextHolder.getContext().getAuthentication() != null &&
+                    SecurityContextHolder.getContext().getAuthentication().isAuthenticated()) {
+                log.debug("用户已认证，跳过JWT处理");
+                filterChain.doFilter(request, response);
+                return;
+            }
+
             // ========== 步骤1：提取JWT令牌 ==========
             String jwt = extractJwtFromRequest(request);
             if (jwt == null) {
-                log.debug("请求中未找到JWT令牌: {}", requestURI);
+                log.debug("请求中未找到JWT令牌: {} {}", method, requestURI);
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            // ========== 步骤2：检查是否已经认证 ==========
-            if (SecurityContextHolder.getContext().getAuthentication() != null) {
-                log.debug("用户已认证，跳过重复处理");
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            // ========== 步骤3：提取设备指纹（如果支持） ==========
+            // ========== 步骤2：提取设备指纹 ==========
             String deviceFingerprint = extractDeviceFingerprint(request);
+            if (securityProperties.getJwt().isEnableDeviceFingerprint() &&
+                    (deviceFingerprint == null || deviceFingerprint.trim().isEmpty())) {
+                log.warn("缺少必需的设备指纹: {} {}", method, requestURI);
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "设备指纹验证失败");
+                return;
+            }
 
-            // ========== 步骤4：验证JWT令牌 ==========
+            // ========== 步骤3：获取客户端IP（用于安全检查） ==========
+            String clientIp = extractClientIpAddress(request);
+
+            // ========== 步骤4：检查IP是否被封禁（防暴力破解） ==========
+            if (loginProtectionService.isIpBlocked(clientIp)) {
+                log.warn("IP地址被封禁: ip={}, uri={}", clientIp, requestURI);
+                response.sendError(HttpServletResponse.SC_NOT_ACCEPTABLE, "请求过于频繁，请稍后再试");
+                return;
+            }
+
+            // ========== 步骤5：验证JWT令牌 ==========
             if (!jwtTokenService.validateToken(jwt, deviceFingerprint)) {
-                log.debug("JWT令牌验证失败: {}", requestURI);
+                log.debug("JWT令牌验证失败: {} {}", method, requestURI);
+                // 记录失败尝试
+                loginProtectionService.recordFailedAttempt(clientIp);
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            // ========== 步骤5：加载用户信息并设置认证 ==========
-            authenticateUser(jwt, request, deviceFingerprint);
+            // ========== 步骤6：提取用户ID并加载用户信息 ==========
+            Long userId = jwtTokenService.getUserIdFromToken(jwt);
+            if (userId == null) {
+                log.warn("无法从JWT中提取用户ID");
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            // 在MDC中添加用户信息用于日志
+            MDC.put("userId", userId.toString());
+
+            // ========== 步骤7：加载用户详细信息 ==========
+            UserDetails userDetails = userDetailsService.loadUserById(userId);
+            if (userDetails == null) {
+                log.warn("无法加载用户信息: userId={}", userId);
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            // ========== 步骤8：检查用户账户状态 ==========
+            if (!validateUserAccountStatus(userDetails)) {
+                log.warn("用户账户状态异常: userId={}", userId);
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "账户状态异常");
+                return;
+            }
+
+            // ========== 步骤9：验证IP地址（如果启用） ==========
+            if (securityProperties.getAuth().isEnableIpValidation()) {
+                if (!validateIpAddress(clientIp, jwt)) {
+                    log.warn("IP地址验证失败: userId={}, ip={}", userId, clientIp);
+                    response.sendError(HttpServletResponse.SC_FORBIDDEN, "IP地址验证失败");
+                    return;
+                }
+            }
+
+            // ========== 步骤10：设置Spring Security认证上下文 ==========
+            setAuthenticationContext(userDetails, request);
+
+            // ========== 步骤11：记录成功的认证 ==========
+            logAuthenticationSuccess(userDetails, request, deviceFingerprint);
+
+            // ========== 步骤12：重置失败计数 ==========
+            loginProtectionService.resetFailedAttempts(clientIp);
 
         } catch (Exception e) {
             // 记录错误但不抛出，让请求继续处理
@@ -124,10 +220,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             // 清理可能的部分认证状态
             SecurityContextHolder.clearContext();
+        } finally {
+            // 传递请求到下一个过滤器
+            filterChain.doFilter(request, response);
+            // 清理MDC
+            MDC.clear();
         }
-
-        // ========== 步骤6：继续过滤器链 ==========
-        filterChain.doFilter(request, response);
     }
 
     /**
@@ -178,30 +276,147 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * 各种特征信息生成唯一标识。</p>
      */
     private String extractDeviceFingerprint(HttpServletRequest request) {
-        // 从自定义头中获取设备指纹
-        String fingerprint = request.getHeader("X-Device-Fingerprint");
+        // 1. 从专用头部获取设备指纹
+        String fingerprint = request.getHeader(DEVICE_FINGERPRINT_HEADER);
 
-        if (!StringUtils.hasText(fingerprint)) {
-            // 如果没有提供设备指纹，可以基于请求信息生成简单的指纹
+        if (StringUtils.hasText(fingerprint)) {
+            return fingerprint;
+        }
+
+        // 2. 如果配置要求设备指纹但未提供，生成基础指纹
+        if (securityProperties.getJwt().isEnableDeviceFingerprint()) {
+            // 基于请求特征生成指纹
             String userAgent = request.getHeader("User-Agent");
             String acceptLanguage = request.getHeader("Accept-Language");
+            String acceptEncoding = request.getHeader("Accept-Encoding");
             String remoteAddr = getClientIpAddress(request);
 
             if (userAgent != null) {
-                // 简单的指纹生成逻辑
                 StringBuilder fpBuilder = new StringBuilder();
                 fpBuilder.append(userAgent.hashCode());
                 if (acceptLanguage != null) {
                     fpBuilder.append(":").append(acceptLanguage.hashCode());
                 }
+                if (acceptEncoding != null) {
+                    fpBuilder.append(":").append(acceptEncoding.hashCode());
+                }
                 if (remoteAddr != null) {
                     fpBuilder.append(":").append(remoteAddr.hashCode());
                 }
+
                 fingerprint = String.valueOf(fpBuilder.toString().hashCode());
+                log.debug("生成设备指纹: {}", fingerprint);
+                return fingerprint;
             }
         }
 
-        return fingerprint;
+        return null;
+    }
+
+    /**
+     * 提取客户端真实IP地址
+     *
+     * <p>在使用代理或负载均衡器的环境中，需要从特定头部获取真实IP。</p>
+     */
+    private String extractClientIpAddress(HttpServletRequest request) {
+        // 按优先级检查各种头部
+        String[] headers = {
+                "X-Real-IP",
+                "X-Forwarded-For",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_X_FORWARDED_FOR",
+                "HTTP_X_FORWARDED",
+                "HTTP_X_CLUSTER_CLIENT_IP",
+                "HTTP_CLIENT_IP",
+                "HTTP_FORWARDED_FOR",
+                "HTTP_FORWARDED"
+        };
+
+        for (String header : headers) {
+            String ip = request.getHeader(header);
+            if (StringUtils.hasText(ip) && !"unknown".equalsIgnoreCase(ip)) {
+                // 处理多个IP的情况（取第一个）
+                if (ip.contains(",")) {
+                    ip = ip.split(",")[0].trim();
+                }
+                // 验证IP格式
+                if (isValidIpAddress(ip)) {
+                    log.trace("从{}头部获取IP: {}", header, ip);
+                    return ip;
+                }
+            }
+        }
+
+        // 如果都没有，使用直接连接的IP
+        String remoteAddr = request.getRemoteAddr();
+        return isValidIpAddress(remoteAddr) ? remoteAddr : "unknown";
+    }
+
+    /**
+     * 验证用户账户状态
+     */
+    private boolean validateUserAccountStatus(UserDetails userDetails) {
+        if (!userDetails.isEnabled()) {
+            log.warn("用户账户已禁用: username={}", userDetails.getUsername());
+            return false;
+        }
+
+        if (!userDetails.isAccountNonLocked()) {
+            log.warn("用户账户已锁定: username={}", userDetails.getUsername());
+            return false;
+        }
+
+        if (!userDetails.isAccountNonExpired()) {
+            log.warn("用户账户已过期: username={}", userDetails.getUsername());
+            return false;
+        }
+
+        if (!userDetails.isCredentialsNonExpired()) {
+            log.warn("用户凭证已过期: username={}", userDetails.getUsername());
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 验证IP地址是否允许
+     */
+    private boolean validateIpAddress(String clientIp, String jwt) {
+        // 从JWT中获取原始IP
+        String tokenIp = jwtTokenService.getIpFromToken(jwt);
+
+        if (tokenIp != null && !tokenIp.equals(clientIp)) {
+            // 检查是否在允许的IP范围内
+            String allowedIps = securityProperties.getAuth().getAllowedIps();
+            if (StringUtils.hasText(allowedIps)) {
+                return Arrays.stream(allowedIps.split(","))
+                        .anyMatch(ip -> ip.trim().equals(clientIp));
+            }
+
+            // 如果IP变化且不在白名单，认为不安全
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 设置Spring Security认证上下文
+     */
+    private void setAuthenticationContext(UserDetails userDetails, HttpServletRequest request) {
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null,
+                        userDetails.getAuthorities()
+                );
+
+        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        log.debug("认证上下文设置成功: username={}", userDetails.getUsername());
     }
 
     /**
@@ -308,6 +523,35 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
+     * 获取或生成请求ID（用于日志追踪）
+     */
+    private String getOrGenerateRequestId(HttpServletRequest request) {
+        String requestId = request.getHeader(REQUEST_ID_HEADER);
+        if (!StringUtils.hasText(requestId)) {
+            requestId = java.util.UUID.randomUUID().toString();
+        }
+        return requestId;
+    }
+
+    /**
+     * 检查是否为公开路径
+     */
+    private boolean isPublicPath(String path) {
+        // 精确匹配
+        if (PUBLIC_PATHS.contains(path)) {
+            return true;
+        }
+
+        // 前缀匹配（静态资源等）
+        return path.startsWith("/static/") ||
+                path.startsWith("/public/") ||
+                path.startsWith("/assets/") ||
+                path.equals("/favicon.ico") ||
+                path.startsWith("/swagger-ui/") ||
+                path.startsWith("/v3/api-docs/");
+    }
+
+    /**
      * 获取客户端真实IP地址
      *
      * <p>在使用负载均衡器或代理服务器的环境中，需要从特定的头部中
@@ -354,11 +598,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return false;
         }
 
-        // 简单的IP地址格式验证
-        String ipPattern = "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$";
+        // IPv4格式验证
+        String ipv4Pattern = "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}" +
+                "(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$";
+
+        // IPv6格式验证（简化版）
         String ipv6Pattern = "^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$";
 
-        return ip.matches(ipPattern) || ip.matches(ipv6Pattern) || "localhost".equals(ip);
+        return ip.matches(ipv4Pattern) ||
+                ip.matches(ipv6Pattern) ||
+                "localhost".equals(ip) ||
+                "127.0.0.1".equals(ip) ||
+                "::1".equals(ip);
     }
 
     /**
@@ -372,31 +623,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // 跳过静态资源
-        if (path.startsWith("/static/") ||
-                path.startsWith("/public/") ||
-                path.startsWith("/assets/") ||
-                path.equals("/favicon.ico")) {
+        // OPTIONS请求直接通过（CORS预检）
+        if ("OPTIONS".equals(method)) {
             return true;
         }
 
-        // 跳过健康检查
-        if (path.endsWith("/health")) {
-            return true;
-        }
-
-        // 跳过API文档（根据配置）
-        if (path.startsWith("/swagger-ui/") ||
-                path.startsWith("/v3/api-docs/") ||
-                path.equals("/doc.html")) {
-            return true;
-        }
-
-        // 跳过认证相关的接口
-        if (path.startsWith("/api/v1/auth/")) {
-            return true;
-        }
-
-        return false;
+        // 公开路径跳过
+        return isPublicPath(path);
     }
 }

@@ -77,10 +77,10 @@ public class SecurityProperties {
         private String rsaPublicKey;
 
         /**
-         * 访问令牌有效期（毫秒），默认24小时
+         * 访问令牌有效期（毫秒），默认1小时
          */
         @Min(value = 300000, message = "访问令牌有效期不能少于5分钟")
-        private Long accessTokenExpiration = 86400000L;
+        private Long accessTokenExpiration = 3600000L;
 
         /**
          * 刷新令牌有效期（毫秒），默认7天
@@ -142,7 +142,7 @@ public class SecurityProperties {
         /**
          * 暴露给前端的响应头
          */
-        private String exposedHeaders = "Authorization,X-Total-Count,X-Page-Number,X-Page-Size";
+        private String exposedHeaders = "Authorization,X-Total-Count,X-Page-Number,X-Page-Size,X-Request-Id";
 
         /**
          * 是否允许发送Cookie
@@ -164,8 +164,8 @@ public class SecurityProperties {
         /**
          * 密码最小长度
          */
-        @Min(value = 6, message = "密码最小长度不能少于6位")
-        private Integer minLength = 8;
+        @Min(value = 8, message = "密码最小长度不能少于8位")
+        private Integer minLength = 12;
 
         /**
          * 密码最大长度
@@ -214,13 +214,13 @@ public class SecurityProperties {
         /**
          * 登录失败锁定阈值
          */
-        @Min(value = 1, message = "登录失败锁定阈值不能少于1次")
+        @Min(value = 3, message = "登录失败锁定阈值不能少于3次")
         private Integer lockoutThreshold = 5;
 
         /**
          * 账户锁定时间（分钟）
          */
-        @Min(value = 1, message = "账户锁定时间不能少于1分钟")
+        @Min(value = 5, message = "账户锁定时间不能少于5分钟")
         private Integer lockoutDurationMinutes = 30;
 
         /**
@@ -232,6 +232,11 @@ public class SecurityProperties {
          * 是否启用弱密码检测
          */
         private boolean enableWeakPasswordCheck = true;
+
+        /**
+         * 是否启用密码泄露检查
+         */
+        private boolean enableBreachCheck = true;
     }
 
     /**
@@ -256,7 +261,7 @@ public class SecurityProperties {
         private boolean enableIpValidation = false;
 
         /**
-         * 允许的IP地址列表（空表示不限制）
+         * 允许的IP地址列表，支持CIDR格式（空表示不限制）
          */
         private String allowedIps = "";
 
@@ -280,7 +285,7 @@ public class SecurityProperties {
         /**
          * 是否启用验证码
          */
-        private boolean enableCaptcha = false;
+        private boolean enableCaptcha = true;
 
         /**
          * 登录失败多少次后启用验证码
@@ -298,6 +303,23 @@ public class SecurityProperties {
          */
         @Min(value = 30, message = "二次验证代码有效期不能少于30秒")
         private Integer twoFactorCodeExpiration = 300;
+
+        /**
+         * 是否启用登录异常检测
+         * 检测异常登录行为（如异地登录）
+         */
+        private boolean enableAnomalyDetection = true;
+
+        /**
+         * 是否记录登录历史
+         */
+        private boolean enableLoginHistory = true;
+
+        /**
+         * 登录历史保留天数
+         */
+        @Min(value = 7, message = "登录历史保留天数不能少于7天")
+        private Integer loginHistoryRetentionDays = 90;
     }
 
     // =================== 配置验证方法 ===================

@@ -248,6 +248,10 @@ public class SecurityAutoConfiguration extends BaseAutoConfiguration {
             validateRange(auth.getRememberMeDays(), 1, 365, "记住我有效期");
         }
 
+        if (auth.isEnableLoginHistory()) {
+            validateRange(auth.getLoginHistoryRetentionDays(), 7, 180, "登录历史有效期");
+        }
+
         // IP验证配置检查
         if (auth.isEnableIpValidation() && !auth.getAllowedIps().isEmpty()) {
             logInfo("IP地址验证已启用，允许的IP数量: %d",
@@ -258,7 +262,9 @@ public class SecurityAutoConfiguration extends BaseAutoConfiguration {
                 auth.isEnableMultiDevice() ? "启用" : "禁用",
                 auth.isEnableRememberMe() ? "启用" : "禁用",
                 auth.isEnableCaptcha() ? "启用" : "禁用",
-                auth.isEnableTwoFactorAuth() ? "启用" : "禁用");
+                auth.isEnableTwoFactorAuth() ? "启用" : "禁用",
+                auth.isEnableAnomalyDetection() ? "启用" : "禁用",
+                auth.isEnableLoginHistory() ? "启用" : "禁用");
     }
 
     /**

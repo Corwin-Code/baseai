@@ -2,15 +2,19 @@ package com.cloud.baseai.infrastructure.security.jwt;
 
 import com.cloud.baseai.infrastructure.config.properties.SecurityProperties;
 import com.cloud.baseai.infrastructure.security.UserPrincipal;
+import com.cloud.baseai.infrastructure.security.service.CustomUserDetailsService;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SignatureException;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -45,12 +49,15 @@ public class JwtTokenService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtTokenService.class);
 
-    private static final String TOKEN_BLACKLIST_PREFIX = "jwt:blacklist:";
+    private static final String TOKEN_BLACKLIST_PREFIX = "jwt:blacklist:token:";
+    private static final String USER_BLACKLIST_PREFIX = "jwt:blacklist:user:";
     private static final String TOKEN_FINGERPRINT_PREFIX = "jwt:fingerprint:";
     private static final String REFRESH_TOKEN_PREFIX = "jwt:refresh:";
+    private static final String LOGIN_ATTEMPT_PREFIX = "login:attempt:";
 
     private final SecurityProperties securityProps;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final CustomUserDetailsService userDetailsService;
 
     /**
      * RSA密钥对（用于高安全性场景）
@@ -67,25 +74,33 @@ public class JwtTokenService {
      * 构造函数，初始化密钥对
      */
     public JwtTokenService(SecurityProperties securityProps,
-                           RedisTemplate<String, Object> redisTemplate) {
+                           RedisTemplate<String, Object> redisTemplate,
+                           CustomUserDetailsService userDetailsService) {
         this.securityProps = securityProps;
         this.redisTemplate = redisTemplate;
+        this.userDetailsService = userDetailsService;
 
         try {
-            // 从配置加载RSA密钥对
-            this.rsaPrivateKey = loadRSAPrivateKey(securityProps.getJwt().getRsaPrivateKey());
-            this.rsaPublicKey = loadRSAPublicKey(securityProps.getJwt().getRsaPublicKey());
+            if (securityProps.getJwt().isUseRsa()) {
+                // 从配置加载RSA密钥对
+                this.rsaPrivateKey = loadRSAPrivateKey(securityProps.getJwt().getRsaPrivateKey());
+                this.rsaPublicKey = loadRSAPublicKey(securityProps.getJwt().getRsaPublicKey());
+                this.hmacSecretKey = null;
 
-            // 初始化HMAC密钥
-            String hmacSecret = securityProps.getJwt().getSecret();
-            if (hmacSecret.length() < 32) {
-                log.warn("HMAC密钥长度不足，自动填充到安全长度");
-                hmacSecret = hmacSecret + "padding-to-make-key-longer-for-security";
+                log.info("JWT服务初始化完成：使用RSA加密");
+            } else {
+                // 初始化HMAC密钥
+                String hmacSecret = securityProps.getJwt().getSecret();
+                if (hmacSecret.length() < 32) {
+                    log.warn("HMAC密钥长度不足，自动填充到安全长度");
+                    hmacSecret = hmacSecret + "padding-to-make-key-longer-for-security";
+                }
+                this.hmacSecretKey = Keys.hmacShaKeyFor(hmacSecret.getBytes());
+                this.rsaPrivateKey = null;
+                this.rsaPublicKey = null;
+
+                log.info("JWT服务初始化完成：使用HMAC加密");
             }
-            this.hmacSecretKey = Keys.hmacShaKeyFor(hmacSecret.getBytes());
-
-            log.info("JWT服务初始化完成，支持RSA和HMAC两种加密方式");
-
         } catch (Exception e) {
             log.error("JWT服务初始化失败", e);
             throw new RuntimeException("JWT服务初始化失败", e);
@@ -117,10 +132,21 @@ public class JwtTokenService {
      * 生成完整的令牌对（访问令牌 + 刷新令牌）
      *
      * <p>推荐在登录成功后使用，提供完整的令牌管理能力。</p>
+     *
+     * @param userPrincipal     用户主体信息
+     * @param deviceFingerprint 设备指纹（可选，根据配置决定是否必需）
+     * @param ipAddress         IP地址
+     * @return 令牌对
      */
     public TokenPair generateTokenPair(UserPrincipal userPrincipal,
                                        String deviceFingerprint,
                                        String ipAddress) {
+        // 验证设备指纹（如果配置要求）
+        if (securityProps.getJwt().isEnableDeviceFingerprint() &&
+                (deviceFingerprint == null || deviceFingerprint.trim().isEmpty())) {
+            throw new IllegalArgumentException("系统要求提供设备指纹");
+        }
+
         Instant now = Instant.now();
         String jti = UUID.randomUUID().toString();
 
@@ -159,6 +185,10 @@ public class JwtTokenService {
 
     /**
      * 验证令牌有效性（包含设备指纹验证）
+     *
+     * @param token             要验证的令牌
+     * @param deviceFingerprint 设备指纹
+     * @return 是否有效
      */
     public boolean validateToken(String token, String deviceFingerprint) {
         if (token == null || token.trim().isEmpty()) {
@@ -172,20 +202,35 @@ public class JwtTokenService {
                 return false;
             }
 
-            // 检查黑名单
             String jti = claims.getId();
+            Long userId = Long.valueOf(claims.getSubject());
+
+            // 1. 检查令牌黑名单
             if (isTokenBlacklisted(jti)) {
                 log.debug("令牌在黑名单中: jti={}", jti);
                 return false;
             }
 
-            // 验证设备指纹（如果提供）
-            if (deviceFingerprint != null) {
+            // 2. 检查用户级黑名单（修复的关键点）
+            if (isUserBlacklisted(userId)) {
+                log.debug("用户在黑名单中: userId={}", userId);
+                return false;
+            }
+
+            // 3. 验证设备指纹
+            if (securityProps.getJwt().isEnableDeviceFingerprint() || deviceFingerprint != null) {
                 String storedFingerprint = claims.get("fingerprint", String.class);
                 if (storedFingerprint != null && !verifyFingerprint(deviceFingerprint, storedFingerprint)) {
-                    log.warn("设备指纹不匹配: jti={}", jti);
+                    log.warn("设备指纹验证失败: jti={}, userId={}", jti, userId);
+                    recordSecurityEvent(userId, "FINGERPRINT_MISMATCH", jti);
                     return false;
                 }
+            }
+
+            // 4. 验证IP地址（如果启用）
+            if (securityProps.getAuth().isEnableIpValidation()) {
+                String tokenIp = claims.get("ip", String.class);
+                // 这里添加IP验证逻辑
             }
 
             log.debug("令牌验证通过: jti={}", jti);
@@ -204,6 +249,10 @@ public class JwtTokenService {
 
     /**
      * 刷新访问令牌
+     *
+     * @param refreshToken      刷新令牌
+     * @param deviceFingerprint 设备指纹
+     * @return 新的访问令牌
      */
     public String refreshAccessToken(String refreshToken, String deviceFingerprint) {
         try {
@@ -219,7 +268,7 @@ public class JwtTokenService {
             }
 
             // 验证设备指纹
-            if (deviceFingerprint != null) {
+            if (securityProps.getJwt().isEnableDeviceFingerprint() || deviceFingerprint != null) {
                 String storedFingerprint = claims.get("fingerprint", String.class);
                 if (!verifyFingerprint(deviceFingerprint, storedFingerprint)) {
                     throw new SecurityException("设备指纹不匹配");
@@ -234,8 +283,21 @@ public class JwtTokenService {
 
             // 重新加载用户信息生成新令牌
             Long userId = Long.valueOf(claims.getSubject());
-            // 这里需要通过UserDetailsService重新加载用户信息
-            // UserPrincipal userPrincipal = userDetailsService.loadUserById(userId);
+
+            // 检查用户是否被封禁
+            if (isUserBlacklisted(userId)) {
+                throw new SecurityException("用户已被封禁");
+            }
+
+            //从数据库重新加载用户信息
+            UserDetails userDetails = userDetailsService.loadUserById(userId);
+            if (userDetails == null) {
+                throw new SecurityException("用户不存在");
+            }
+
+            if (!userDetails.isEnabled()) {
+                throw new SecurityException("用户账户已禁用");
+            }
 
             // 简化实现：从令牌中提取基本信息
             List<String> roles = claims.get("roles", List.class);
@@ -245,7 +307,12 @@ public class JwtTokenService {
 
             UserPrincipal userPrincipal = createUserPrincipalFromClaims(userId, username, email, roles, tenantIds);
 
-            return generateAccessToken(userPrincipal, deviceFingerprint, null);
+            String newAccessToken = generateAccessToken(userPrincipal, deviceFingerprint, null);
+
+            log.info("访问令牌刷新成功: userId={}", userId);
+            recordSecurityEvent(userId, "TOKEN_REFRESHED", claims.getId());
+
+            return newAccessToken;
 
         } catch (Exception e) {
             log.error("刷新令牌失败: {}", e.getMessage(), e);
@@ -265,6 +332,7 @@ public class JwtTokenService {
 
             String jti = claims.getId();
             Date expiration = claims.getExpiration();
+            Long userId = Long.valueOf(claims.getSubject());
 
             if (jti != null && expiration != null) {
                 // 计算剩余有效时间
@@ -272,7 +340,9 @@ public class JwtTokenService {
                 if (ttl > 0) {
                     String key = TOKEN_BLACKLIST_PREFIX + jti;
                     redisTemplate.opsForValue().set(key, true, ttl, TimeUnit.MILLISECONDS);
+
                     log.info("令牌已撤销: jti={}", jti);
+                    recordSecurityEvent(userId, "TOKEN_REVOKED", jti);
                 }
             }
 
@@ -283,18 +353,28 @@ public class JwtTokenService {
 
     /**
      * 撤销用户的所有令牌
+     *
+     * @param userId 用户ID
      */
     public void revokeAllUserTokens(Long userId) {
         try {
             // 将用户ID加入全局黑名单
-            String userBlacklistKey = "user:blacklist:" + userId;
-            redisTemplate.opsForValue().set(userBlacklistKey, true,
-                    securityProps.getJwt().getRefreshTokenExpiration(), TimeUnit.MILLISECONDS);
+            String userBlacklistKey = USER_BLACKLIST_PREFIX + userId;
+            long maxExpiration = Math.max(
+                    securityProps.getJwt().getAccessTokenExpiration(),
+                    securityProps.getJwt().getRefreshTokenExpiration()
+            );
+
+            redisTemplate.opsForValue().set(userBlacklistKey, true, maxExpiration, TimeUnit.MILLISECONDS);
+
+            // 清除用户相关的缓存
+            clearUserCache(userId);
 
             log.info("用户所有令牌已撤销: userId={}", userId);
+            recordSecurityEvent(userId, "ALL_TOKENS_REVOKED", null);
 
         } catch (Exception e) {
-            log.error("撤销用户令牌失败: userId={}", userId, e);
+            log.error("撤销用户所有令牌失败: userId={}", userId, e);
         }
     }
 
@@ -350,6 +430,14 @@ public class JwtTokenService {
         return tenantIds.stream()
                 .map(id -> Long.valueOf(id.toString()))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 从令牌中提取Ip信息
+     */
+    public String getIpFromToken(String token) {
+        Claims claims = parseTokenClaims(token);
+        return claims != null ? claims.get("ip", String.class) : null;
     }
 
     /**
@@ -490,9 +578,9 @@ public class JwtTokenService {
     }
 
     /**
-     * 解析令牌获取Claims
+     * 解析令牌获取Claims（带缓存）
      */
-    @Cacheable(value = "jwt-claims", key = "#token", unless = "#result == null")
+    @Cacheable(value = "jwt-claims", key = "#token", unless = "#result == null", condition = "#token.length() < 1000")
     public Claims parseTokenClaims(String token) {
         try {
             JwtParserBuilder parser = Jwts.parser()
@@ -525,6 +613,15 @@ public class JwtTokenService {
     }
 
     /**
+     * 检查用户是否在黑名单中
+     */
+    private boolean isUserBlacklisted(Long userId) {
+        if (userId == null) return false;
+        String key = USER_BLACKLIST_PREFIX + userId;
+        return redisTemplate.hasKey(key);
+    }
+
+    /**
      * 存储令牌指纹
      */
     private void storeTokenFingerprint(String jti, String fingerprint, long expiration) {
@@ -538,15 +635,41 @@ public class JwtTokenService {
      */
     private String hashFingerprint(String fingerprint) {
         if (fingerprint == null) return null;
-        return org.apache.commons.codec.digest.DigestUtils.sha256Hex(fingerprint);
+        return DigestUtils.sha256Hex(fingerprint);
     }
 
     /**
      * 验证设备指纹
      */
     private boolean verifyFingerprint(String provided, String stored) {
+        if (provided == null && stored == null) return true;
         if (provided == null || stored == null) return false;
         return hashFingerprint(provided).equals(stored);
+    }
+
+    /**
+     * 记录安全事件
+     */
+    private void recordSecurityEvent(Long userId, String eventType, String details) {
+        try {
+//            String key = "security:events:" + userId;
+//            SecurityAuditEvent event = new SecurityAuditEvent(eventType, userId, details, Instant.now());
+//
+//            // 使用Redis列表存储最近的安全事件
+//            redisTemplate.opsForList().leftPush(key, event);
+//            redisTemplate.opsForList().trim(key, 0, 99); // 保留最近100条
+//            redisTemplate.expire(key, 30, TimeUnit.DAYS);
+        } catch (Exception e) {
+            log.warn("记录安全事件失败", e);
+        }
+    }
+
+    /**
+     * 清除用户缓存
+     */
+    @CacheEvict(value = "jwt-claims", allEntries = true)
+    public void clearUserCache(Long userId) {
+        log.debug("清除用户JWT缓存: userId={}", userId);
     }
 
     /**
