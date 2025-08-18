@@ -20,6 +20,7 @@ import com.cloud.baseai.infrastructure.persistence.mcp.entity.enums.ToolCallStat
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -28,8 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -47,17 +46,20 @@ public class McpApplicationService {
     private final ToolAuthRepository toolAuthRepo;
     private final ToolCallLogRepository toolCallLogRepo;
     private final ToolExecutionService toolExecutionService;
-    private final ExecutorService asyncExecutor;
+
+    // MCP工具管理专用异步执行器
+    private final AsyncTaskExecutor mcpToolAsyncExecutor;
 
     public McpApplicationService(ToolRepository toolRepo,
                                  ToolAuthRepository toolAuthRepo,
                                  ToolCallLogRepository toolCallLogRepo,
-                                 ToolExecutionService toolExecutionService) {
+                                 ToolExecutionService toolExecutionService,
+                                 AsyncTaskExecutor mcpToolAsyncExecutor) {
         this.toolRepo = toolRepo;
         this.toolAuthRepo = toolAuthRepo;
         this.toolCallLogRepo = toolCallLogRepo;
         this.toolExecutionService = toolExecutionService;
-        this.asyncExecutor = Executors.newCachedThreadPool();
+        this.mcpToolAsyncExecutor = mcpToolAsyncExecutor;
     }
 
     // =================== 工具注册管理 ===================
@@ -452,17 +454,6 @@ public class McpApplicationService {
                 components.put("execution_service", "unhealthy: " + e.getMessage());
             }
 
-            // 检查异步执行器
-            try {
-                if (!asyncExecutor.isShutdown()) {
-                    components.put("async_executor", "healthy");
-                } else {
-                    components.put("async_executor", "unhealthy: executor is shutdown");
-                }
-            } catch (Exception e) {
-                components.put("async_executor", "unhealthy: " + e.getMessage());
-            }
-
             boolean allHealthy = components.values().stream()
                     .allMatch(status -> status.equals("healthy"));
 
@@ -522,7 +513,7 @@ public class McpApplicationService {
                 // 更新调用日志状态
                 updateCallLogStatus(callLog.id(), ToolCallStatus.FAILED, null, e.getMessage());
             }
-        }, asyncExecutor);
+        }, mcpToolAsyncExecutor);
     }
 
     private ToolExecutionResultDTO executeToolSync(Tool tool, ToolAuth auth, ToolCallLog callLog,

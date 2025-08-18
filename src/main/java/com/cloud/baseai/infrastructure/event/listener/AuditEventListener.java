@@ -10,6 +10,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
 import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
 import org.springframework.security.authorization.event.AuthorizationDeniedEvent;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -269,7 +271,7 @@ public class AuditEventListener {
      * <p>这个方法需要根据具体的认证实现来调整。不同的认证方式
      * 可能会以不同的格式存储用户信息。</p>
      */
-    private Long extractUserId(org.springframework.security.core.Authentication authentication) {
+    private Long extractUserId(Authentication authentication) {
         if (authentication == null || authentication.getPrincipal() == null) {
             return null;
         }
@@ -279,8 +281,8 @@ public class AuditEventListener {
             Object principal = authentication.getPrincipal();
 
             // 如果是UserDetails实现
-            if (principal instanceof org.springframework.security.core.userdetails.UserDetails) {
-                String username = ((org.springframework.security.core.userdetails.UserDetails) principal).getUsername();
+            if (principal instanceof UserDetails) {
+                String username = ((UserDetails) principal).getUsername();
                 // 这里应该通过用户服务查询用户ID
                 return parseUserIdFromUsername(username);
             }

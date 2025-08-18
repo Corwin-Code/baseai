@@ -14,17 +14,17 @@ import com.cloud.baseai.infrastructure.constants.SystemConstants;
 import com.cloud.baseai.infrastructure.exception.BusinessException;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.exception.KnowledgeBaseException;
-import com.cloud.baseai.infrastructure.external.llm.service.EmbeddingService;
+import com.cloud.baseai.infrastructure.external.llm.factory.EmbeddingModelFactory;
 import com.cloud.baseai.infrastructure.utils.KbUtils;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -59,13 +59,13 @@ public class KnowledgeBaseAppService {
     private final VectorSearchService vectorService;
 
     // 外部服务
-    private final EmbeddingService embeddingService;
+    private final EmbeddingModelFactory embeddingFactory;
 
     // 配置
     private final KnowledgeBaseProperties kbProps;
 
-    // 异步执行器
-    private final ExecutorService asyncExecutor;
+    // 知识库专用异步执行器
+    private final AsyncTaskExecutor knowledgeBaseAsyncExecutor;
 
     // 可选的用户信息服务
     @Autowired(required = false)
@@ -83,8 +83,9 @@ public class KnowledgeBaseAppService {
             ChunkTagRepository chunkTagRepo,
             DocumentProcessingService docService,
             VectorSearchService vectorService,
-            EmbeddingService embeddingService,
-            KnowledgeBaseProperties kbProps) {
+            EmbeddingModelFactory embeddingFactory,
+            KnowledgeBaseProperties kbProps,
+            AsyncTaskExecutor knowledgeBaseAsyncExecutor) {
 
         this.documentRepo = documentRepo;
         this.chunkRepo = chunkRepo;
@@ -93,14 +94,9 @@ public class KnowledgeBaseAppService {
         this.chunkTagRepo = chunkTagRepo;
         this.docService = docService;
         this.vectorService = vectorService;
-        this.embeddingService = embeddingService;
+        this.embeddingFactory = embeddingFactory;
         this.kbProps = kbProps;
-
-        // 创建异步执行器
-        this.asyncExecutor = Executors.newFixedThreadPool(
-                kbProps.getPerformance() != null ?
-                        kbProps.getPerformance().getAsyncPoolSize() : 10
-        );
+        this.knowledgeBaseAsyncExecutor = knowledgeBaseAsyncExecutor;
     }
 
     // =================== 文档管理接口实现 ===================
@@ -445,14 +441,14 @@ public class KnowledgeBaseAppService {
                         cmd.topK() * 2, cmd.threshold(), false
                 );
                 return vectorSearch(vectorCmd);
-            }, asyncExecutor);
+            }, knowledgeBaseAsyncExecutor);
 
             CompletableFuture<List<SearchResultDTO>> textFuture = CompletableFuture.supplyAsync(() -> {
                 TextSearchCommand textCmd = new TextSearchCommand(
                         cmd.tenantId(), cmd.query(), cmd.tagIds(), cmd.documentIds(), 0, cmd.topK() * 2
                 );
                 return textSearch(textCmd).content();
-            }, asyncExecutor);
+            }, knowledgeBaseAsyncExecutor);
 
             List<SearchResultDTO> vectorResults = vectorFuture.get();
             List<SearchResultDTO> textResults = textFuture.get();
@@ -751,7 +747,7 @@ public class KnowledgeBaseAppService {
                 } catch (Exception e) {
                     log.error("批量向量生成失败: taskId={}", taskId, e);
                 }
-            }, asyncExecutor);
+            }, knowledgeBaseAsyncExecutor);
 
             return new BatchVectorGenerationResult(
                     taskId,
@@ -865,21 +861,10 @@ public class KnowledgeBaseAppService {
 
             // 检查嵌入服务
             try {
-                boolean available = embeddingService.isModelAvailable(kbProps.getEmbedding().getDefaultModel());
+                boolean available = embeddingFactory.isModelAvailable(kbProps.getEmbedding().getDefaultModel());
                 components.put("embedding_service", available ? healthyStatus : unhealthyStatus + ": " + " model not available");
             } catch (Exception e) {
                 components.put("embedding_service", unhealthyStatus + ": " + e.getMessage());
-            }
-
-            // 检查异步执行器
-            try {
-                if (!asyncExecutor.isShutdown()) {
-                    components.put("async_executor", healthyStatus);
-                } else {
-                    components.put("async_executor", unhealthyStatus + ": " + "executor is shutdown");
-                }
-            } catch (Exception e) {
-                components.put("async_executor", unhealthyStatus + ": " + e.getMessage());
             }
 
             boolean allHealthy = components.values().stream()
@@ -1016,7 +1001,7 @@ public class KnowledgeBaseAppService {
             } catch (Exception e) {
                 log.error("异步向量生成失败: documentId={}", documentId, e);
             }
-        }, asyncExecutor);
+        }, knowledgeBaseAsyncExecutor);
     }
 
     private void generateEmbeddingsSync(List<Chunk> chunks, String modelCode, Long userId) {
@@ -1024,7 +1009,7 @@ public class KnowledgeBaseAppService {
 
         for (Chunk chunk : chunks) {
             try {
-                float[] vector = embeddingService.generateEmbedding(chunk.text(), modelCode);
+                float[] vector = embeddingFactory.generateEmbedding(chunk.text(), modelCode);
                 embeddings.add(Embedding.create(
                         chunk.id(),
                         modelCode,
@@ -1084,7 +1069,7 @@ public class KnowledgeBaseAppService {
 
     private float[] generateQueryVector(String query, String modelCode) {
         try {
-            return embeddingService.generateEmbedding(query, modelCode);
+            return embeddingFactory.generateEmbedding(query, modelCode);
         } catch (Exception e) {
             throw new KnowledgeBaseException(ErrorCode.BIZ_KB_033, e);
         }

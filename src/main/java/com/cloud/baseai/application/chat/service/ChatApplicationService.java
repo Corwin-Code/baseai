@@ -103,7 +103,9 @@ public class ChatApplicationService {
             KnowledgeBaseAppService kbService,
             McpApplicationService mcpService,
             FlowOrchestrationAppService flowService,
-            ChatProperties chatProps, RateLimitProperties limitProps, KnowledgeBaseProperties kbProps) {
+            ChatProperties chatProps,
+            RateLimitProperties limitProps,
+            KnowledgeBaseProperties kbProps) {
 
         this.threadRepo = threadRepo;
         this.messageRepo = messageRepo;

@@ -3,6 +3,7 @@ package com.cloud.baseai.infrastructure.config;
 import com.cloud.baseai.infrastructure.config.base.BaseAutoConfiguration;
 import com.cloud.baseai.infrastructure.config.properties.AsyncProperties;
 import jakarta.annotation.PreDestroy;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -676,6 +677,7 @@ public class AsyncAutoConfiguration extends BaseAutoConfiguration {
          * @param task 要执行的任务
          * @return 任务执行的Future对象
          */
+        @NotNull
         @Override
         public Future<?> submit(@NonNull Runnable task) {
             RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
@@ -707,8 +709,9 @@ public class AsyncAutoConfiguration extends BaseAutoConfiguration {
          * @param <T>  返回值类型
          * @return 任务执行的Future对象
          */
+        @NotNull
         @Override
-        public <T> Future<T> submit(Callable<T> task) {
+        public <T> Future<T> submit(@NotNull Callable<T> task) {
             RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
             SecurityContext securityContext = SecurityContextHolder.getContext();
 
@@ -723,6 +726,629 @@ public class AsyncAutoConfiguration extends BaseAutoConfiguration {
                     return task.call();
                 } catch (Exception e) {
                     log.error("流程任务执行异常", e);
+                    throw e;
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            });
+        }
+    }
+
+    /**
+     * <h3>创建知识库专用的异步执行器</h3>
+     *
+     * <p>这个执行器专门用于处理知识库相关的异步任务。知识库操作具有典型的混合特征：</p>
+     * <ul>
+     *   <li><b>文档解析</b>：主要是IO密集型，包括文件读取、网络请求、数据库操作</li>
+     *   <li><b>向量生成</b>：CPU密集型，需要大量的数学计算和模型推理</li>
+     *   <li><b>批量处理</b>：混合型，需要处理大量数据的读写和计算</li>
+     *   <li><b>搜索检索</b>：混合型，涉及向量计算和数据库查询</li>
+     * </ul>
+     *
+     * <p>针对知识库业务的混合特性，该执行器采用了以下优化策略：</p>
+     * <ul>
+     *   <li>平衡的线程数配置，既能处理IO等待又能支持CPU计算</li>
+     *   <li>较大的队列容量，应对批量文档处理的波峰需求</li>
+     *   <li>使用调用者运行策略，确保重要的知识库操作不被丢弃</li>
+     *   <li>较长的线程存活时间，适应知识库任务可能的长时间执行</li>
+     *   <li>优雅关闭配置，保证数据处理的完整性</li>
+     *   <li>安全上下文传播，确保知识库操作的权限控制</li>
+     * </ul>
+     *
+     * @return 配置好的知识库异步任务执行器
+     */
+    @Bean(name = "knowledgeBaseAsyncExecutor")
+    public AsyncTaskExecutor knowledgeBaseAsyncExecutor() {
+        logBeanCreation("knowledgeBaseAsyncExecutor", "知识库专用异步执行器(混合型优化)");
+
+        ThreadPoolTaskExecutor executor = createBaseExecutor("knowledgeBaseAsyncExecutor");
+
+        // 知识库混合型优化配置
+        // 最大线程数：知识库操作既有IO等待又有CPU计算，设置为CPU核心数的3-4倍
+        int kbMaxPoolSize = Math.max(32, asyncProps.getMaxPoolSize() * 3);
+        // 核心线程数：考虑到知识库操作的持续性，设置为CPU核心数的2倍左右
+        int kbCorePoolSize = Math.max(12, asyncProps.getCorePoolSize() * 2);
+        // 队列容量：知识库批量操作可能产生大量任务，设置较大队列容纳更多任务
+        int kbQueueCapacity = Math.max(1000, asyncProps.getQueueCapacity() * 4);
+
+        executor.setMaxPoolSize(kbMaxPoolSize);
+        executor.setCorePoolSize(kbCorePoolSize);
+        executor.setQueueCapacity(kbQueueCapacity);
+
+        // 知识库专用的线程名前缀，便于监控和调试知识库相关操作
+        executor.setThreadNamePrefix("BaseAI-KB-Async-");
+        // 线程存活时间：知识库任务可能执行时间较长，延长线程存活时间减少创建销毁开销
+        executor.setKeepAliveSeconds(Math.max(900, asyncProps.getKeepAliveSeconds() * 3));
+        // 知识库使用调用者运行策略：确保重要的知识库操作不会被丢弃，特别是用户文档处理和向量生成
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 允许核心线程超时：在知识库空闲期间可以释放核心线程，节约系统资源
+        executor.setAllowCoreThreadTimeOut(true);
+        // 优雅关闭配置：给知识库操作充足的时间完成当前任务，避免数据处理中断
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        // 知识库操作需要更长的关闭等待时间，确保向量生成等长时间任务能够完成
+        executor.setAwaitTerminationSeconds(180);
+
+        logInfo("知识库执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d, 存活时间: %d秒",
+                kbCorePoolSize, kbMaxPoolSize, kbQueueCapacity, executor.getKeepAliveSeconds());
+
+        // 包装执行器以支持安全上下文传播，确保知识库操作的权限控制，同时添加知识库上下文复制功能
+        AsyncTaskExecutor kbExecutor = new DelegatingSecurityContextAsyncTaskExecutor(
+                new KnowledgeBaseContextCopyingTaskExecutor(executor));
+
+        logBeanSuccess("knowledgeBaseAsyncExecutor");
+        return kbExecutor;
+    }
+
+    /**
+     * <h2>知识库上下文复制任务执行器</h2>
+     *
+     * <p>这是一个内部类，用于包装 ThreadPoolTaskExecutor，确保在执行知识库任务时
+     * 能够正确地复制和传播知识库相关的上下文信息。</p>
+     */
+    private record KnowledgeBaseContextCopyingTaskExecutor(
+            ThreadPoolTaskExecutor delegate) implements AsyncTaskExecutor {
+
+        /**
+         * 构造函数
+         *
+         * @param delegate 被包装的原始执行器
+         */
+        private KnowledgeBaseContextCopyingTaskExecutor {
+        }
+
+        /**
+         * <h3>执行任务并复制知识库上下文</h3>
+         *
+         * <p>在执行知识库任务前，会复制当前线程的所有相关上下文到新线程中，
+         * 确保知识库操作的完整性和数据一致性。</p>
+         *
+         * @param task 要执行的知识库任务
+         */
+        @Override
+        public void execute(@NonNull Runnable task) {
+            // 复制当前线程的上下文信息
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            // 这里可以扩展复制知识库相关的上下文
+            // 例如：TenantContext tenantContext = TenantContextHolder.getContext();
+            // 例如：KnowledgeBaseContext kbContext = KnowledgeBaseContextHolder.getContext();
+            // 例如：EmbeddingModelContext modelContext = EmbeddingModelContextHolder.getContext();
+
+            delegate.execute(() -> {
+                try {
+                    // 在新线程中恢复所有上下文信息
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+
+                    // 恢复知识库相关上下文
+                    // TenantContextHolder.setContext(tenantContext);
+                    // KnowledgeBaseContextHolder.setContext(kbContext);
+                    // EmbeddingModelContextHolder.setContext(modelContext);
+
+                    // 执行原始知识库任务
+                    task.run();
+
+                } catch (Exception e) {
+                    // 记录知识库任务执行异常，便于问题排查
+                    log.error("知识库任务执行异常", e);
+                    throw e;
+                } finally {
+                    // 清理线程本地变量，避免内存泄漏
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+
+                    // 清理知识库相关上下文
+                    // TenantContextHolder.clearContext();
+                    // KnowledgeBaseContextHolder.clearContext();
+                    // EmbeddingModelContextHolder.clearContext();
+                }
+            });
+        }
+
+        /**
+         * <h3>提交任务并返回Future</h3>
+         *
+         * <p>支持异步任务的提交，返回Future对象用于获取执行结果。
+         * 同样会进行上下文复制和清理。</p>
+         *
+         * @param task 要执行的任务
+         * @return 任务执行的Future对象
+         */
+        @NotNull
+        @Override
+        public Future<?> submit(@NonNull Runnable task) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            return delegate.submit(() -> {
+                try {
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+                    task.run();
+                } catch (Exception e) {
+                    log.error("知识库任务执行异常", e);
+                    throw e;
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            });
+        }
+
+        /**
+         * <h3>提交Callable任务</h3>
+         *
+         * @param task 要执行的Callable任务
+         * @param <T>  返回值类型
+         * @return 任务执行的Future对象
+         */
+        @NotNull
+        @Override
+        public <T> Future<T> submit(@NotNull Callable<T> task) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            return delegate.submit(() -> {
+                try {
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+                    return task.call();
+                } catch (Exception e) {
+                    log.error("知识库任务执行异常", e);
+                    throw e;
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            });
+        }
+    }
+
+    /**
+     * <h3>创建用户管理专用的异步执行器</h3>
+     *
+     * <p>这个执行器专门用于处理用户管理相关的异步任务。用户管理操作具有典型的IO密集型特征：</p>
+     * <ul>
+     *   <li><b>邮件发送</b>：激活邮件、邀请邮件、密码重置邮件等外部服务调用</li>
+     *   <li><b>短信发送</b>：验证码发送、重要通知等第三方API调用</li>
+     *   <li><b>外部系统集成</b>：用户数据同步、第三方身份验证等</li>
+     *   <li><b>数据统计和报告</b>：用户行为分析、使用情况统计等</li>
+     * </ul>
+     *
+     * <p>针对用户管理IO密集型特点，该执行器采用了以下优化策略：</p>
+     * <ul>
+     *   <li>较高的线程数配置，充分利用IO等待时间</li>
+     *   <li>适中的队列容量，平衡内存使用和响应性</li>
+     *   <li>使用调用者运行策略，确保重要的用户通知不被丢弃</li>
+     *   <li>较长的线程存活时间，减少线程创建销毁开销</li>
+     *   <li>优雅关闭配置，保证用户操作的完整性</li>
+     *   <li>安全上下文传播，确保用户管理操作的权限控制和审计</li>
+     * </ul>
+     *
+     * @return 配置好的用户管理异步任务执行器
+     */
+    @Bean(name = "userManagementAsyncExecutor")
+    public AsyncTaskExecutor userManagementAsyncExecutor() {
+        logBeanCreation("userManagementAsyncExecutor", "用户管理专用异步执行器(IO密集型优化)");
+
+        ThreadPoolTaskExecutor executor = createBaseExecutor("userManagementAsyncExecutor");
+
+        // 用户管理IO密集型优化配置
+        // 最大线程数：用户管理主要是IO密集型，可以设置较高，通常为CPU核心数的3-4倍
+        int userMaxPoolSize = Math.max(24, asyncProps.getMaxPoolSize() * 2);
+        // 核心线程数：考虑到用户操作的持续性，设置为CPU核心数的1.5-2倍
+        int userCorePoolSize = Math.max(8, (int) (asyncProps.getCorePoolSize() * 1.5));
+        // 队列容量：用户管理任务通常执行时间可预测，设置适中的队列容量
+        int userQueueCapacity = Math.max(300, asyncProps.getQueueCapacity() * 2);
+
+        executor.setMaxPoolSize(userMaxPoolSize);
+        executor.setCorePoolSize(userCorePoolSize);
+        executor.setQueueCapacity(userQueueCapacity);
+
+        // 用户管理专用的线程名前缀，便于监控和调试用户相关操作
+        executor.setThreadNamePrefix("BaseAI-User-Async-");
+        // 线程存活时间：用户管理任务间隔可能较长，延长线程存活时间减少创建销毁开销
+        executor.setKeepAliveSeconds(Math.max(300, asyncProps.getKeepAliveSeconds() * 2));
+        // 用户管理使用调用者运行策略：确保重要的用户通知不会被丢弃，特别是激活邮件和安全通知
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 允许核心线程超时：在用户操作空闲期间可以释放核心线程，节约系统资源
+        executor.setAllowCoreThreadTimeOut(true);
+        // 优雅关闭配置：给用户管理操作充足的时间完成当前任务，避免用户通知中断
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        // 用户管理操作需要足够的关闭等待时间，确保邮件发送等外部服务调用能够完成
+        executor.setAwaitTerminationSeconds(90);
+
+        logInfo("用户管理执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d, 存活时间: %d秒",
+                userCorePoolSize, userMaxPoolSize, userQueueCapacity, executor.getKeepAliveSeconds());
+
+        // 包装执行器以支持安全上下文传播，确保用户管理操作的权限控制，同时添加用户上下文复制功能
+        AsyncTaskExecutor userExecutor = new DelegatingSecurityContextAsyncTaskExecutor(
+                new UserManagementContextCopyingTaskExecutor(executor));
+
+        logBeanSuccess("userManagementAsyncExecutor");
+        return userExecutor;
+    }
+
+    /**
+     * <h2>用户管理上下文复制任务执行器</h2>
+     *
+     * <p>这是一个内部类，用于包装 ThreadPoolTaskExecutor，确保在执行用户管理任务时
+     * 能够正确地复制和传播用户管理相关的上下文信息。</p>
+     */
+    private record UserManagementContextCopyingTaskExecutor(
+            ThreadPoolTaskExecutor delegate) implements AsyncTaskExecutor {
+
+        /**
+         * 构造函数
+         *
+         * @param delegate 被包装的原始执行器
+         */
+        private UserManagementContextCopyingTaskExecutor {
+        }
+
+        /**
+         * <h3>执行任务并复制用户管理上下文</h3>
+         *
+         * <p>在执行用户管理任务前，会复制当前线程的所有相关上下文到新线程中，
+         * 确保用户管理操作的完整性和数据一致性，特别是在涉及敏感操作如邮件发送、
+         * 权限变更时保持操作的可追溯性。</p>
+         *
+         * @param task 要执行的用户管理任务
+         */
+        @Override
+        public void execute(@NonNull Runnable task) {
+            // 复制当前线程的上下文信息
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            // 这里可以扩展复制用户管理相关的上下文
+            // 例如：TenantContext tenantContext = TenantContextHolder.getContext();
+            // 例如：UserSessionContext sessionContext = UserSessionContextHolder.getContext();
+            // 例如：AuditContext auditContext = AuditContextHolder.getContext();
+            // 例如：EmailTemplateContext emailContext = EmailTemplateContextHolder.getContext();
+
+            delegate.execute(() -> {
+                try {
+                    // 在新线程中恢复所有上下文信息
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+
+                    // 恢复用户管理相关上下文
+                    // TenantContextHolder.setContext(tenantContext);
+                    // UserSessionContextHolder.setContext(sessionContext);
+                    // AuditContextHolder.setContext(auditContext);
+                    // EmailTemplateContextHolder.setContext(emailContext);
+
+                    // 执行原始用户管理任务
+                    task.run();
+
+                } catch (Exception e) {
+                    // 记录用户管理任务执行异常，便于问题排查
+                    log.error("用户管理任务执行异常", e);
+                    throw e;
+                } finally {
+                    // 清理线程本地变量，避免内存泄漏
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+
+                    // 清理用户管理相关上下文
+                    // TenantContextHolder.clearContext();
+                    // UserSessionContextHolder.clearContext();
+                    // AuditContextHolder.clearContext();
+                    // EmailTemplateContextHolder.clearContext();
+                }
+            });
+        }
+
+        /**
+         * <h3>提交任务并返回Future</h3>
+         *
+         * <p>支持异步任务的提交，返回Future对象用于获取执行结果。
+         * 同样会进行上下文复制和清理。</p>
+         *
+         * @param task 要执行的任务
+         * @return 任务执行的Future对象
+         */
+        @NotNull
+        @Override
+        public Future<?> submit(@NonNull Runnable task) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            return delegate.submit(() -> {
+                try {
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+                    task.run();
+                } catch (Exception e) {
+                    log.error("用户管理任务执行异常", e);
+                    throw e;
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            });
+        }
+
+        /**
+         * <h3>提交Callable任务</h3>
+         *
+         * @param task 要执行的Callable任务
+         * @param <T>  返回值类型
+         * @return 任务执行的Future对象
+         */
+        @NotNull
+        @Override
+        public <T> Future<T> submit(@NotNull Callable<T> task) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            return delegate.submit(() -> {
+                try {
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+                    return task.call();
+                } catch (Exception e) {
+                    log.error("用户管理任务执行异常", e);
+                    throw e;
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            });
+        }
+    }
+
+    /**
+     * <h3>创建MCP工具管理专用的异步执行器</h3>
+     *
+     * <p>这个执行器专门用于处理MCP工具管理相关的异步任务。MCP工具执行具有典型的IO密集型特征：</p>
+     * <ul>
+     *   <li><b>外部工具调用</b>：HTTP API调用、WebSocket连接、第三方服务集成</li>
+     *   <li><b>长时间执行</b>：某些工具可能需要较长执行时间（如数据处理、AI推理）</li>
+     *   <li><b>网络依赖</b>：大量的网络IO操作，包括超时重试机制</li>
+     *   <li><b>并发调用</b>：支持多租户并发调用多种工具</li>
+     * </ul>
+     *
+     * <p>针对MCP工具执行的IO密集型和长时间执行特点，该执行器采用了以下优化策略：</p>
+     * <ul>
+     *   <li>高线程数配置，充分利用IO等待时间和支持高并发</li>
+     *   <li>大容量队列，应对工具调用的突发需求和排队等待</li>
+     *   <li>使用调用者运行策略，确保重要的工具调用不被丢弃</li>
+     *   <li>超长线程存活时间，适应工具调用可能的长间隔特性</li>
+     *   <li>优雅关闭配置，保证工具执行的完整性和数据一致性</li>
+     *   <li>工具执行上下文传播，确保调用链路的完整追踪</li>
+     * </ul>
+     *
+     * @return 配置好的MCP工具管理异步任务执行器
+     */
+    @Bean(name = "mcpToolAsyncExecutor")
+    public AsyncTaskExecutor mcpToolAsyncExecutor() {
+        logBeanCreation("mcpToolAsyncExecutor", "MCP工具管理专用异步执行器(IO密集型+长时间执行优化)");
+
+        ThreadPoolTaskExecutor executor = createBaseExecutor("mcpToolAsyncExecutor");
+
+        // MCP工具执行IO密集型+长时间执行优化配置
+        // 最大线程数：MCP工具调用是IO密集型且可能长时间执行，设置为CPU核心数的4-6倍以支持高并发
+        int mcpMaxPoolSize = Math.max(48, asyncProps.getMaxPoolSize() * 4);
+        // 核心线程数：考虑到工具调用的持续性和并发需求，设置为CPU核心数的2-3倍
+        int mcpCorePoolSize = Math.max(16, asyncProps.getCorePoolSize() * 2);
+        // 队列容量：工具调用可能有突发需求且执行时间不定，设置大容量队列容纳更多待执行的工具调用
+        int mcpQueueCapacity = Math.max(2000, asyncProps.getQueueCapacity() * 5);
+
+        executor.setMaxPoolSize(mcpMaxPoolSize);
+        executor.setCorePoolSize(mcpCorePoolSize);
+        executor.setQueueCapacity(mcpQueueCapacity);
+
+        // MCP工具专用的线程名前缀，便于监控和调试工具执行情况
+        executor.setThreadNamePrefix("BaseAI-MCP-Tool-Async-");
+        // 线程存活时间：工具调用间隔可能很长，且单次调用可能耗时较久，设置超长存活时间
+        executor.setKeepAliveSeconds(Math.max(1800, asyncProps.getKeepAliveSeconds() * 6));
+        // MCP工具使用调用者运行策略：确保重要的工具调用不会被丢弃，特别是付费工具或关键业务工具
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 允许核心线程超时：在工具调用空闲期间可以释放核心线程，节约系统资源
+        executor.setAllowCoreThreadTimeOut(true);
+        // 优雅关闭配置：给工具执行充足的时间完成当前调用，避免执行中断和数据不一致
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        // MCP工具执行需要最长的关闭等待时间，确保所有工具调用能够完整执行完毕
+        executor.setAwaitTerminationSeconds(300);
+
+        logInfo("MCP工具执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d, 存活时间: %d秒",
+                mcpCorePoolSize, mcpMaxPoolSize, mcpQueueCapacity, executor.getKeepAliveSeconds());
+
+        // 包装执行器以支持安全上下文传播，确保工具执行过程中的权限控制，同时添加MCP工具执行上下文复制功能
+        AsyncTaskExecutor mcpExecutor = new DelegatingSecurityContextAsyncTaskExecutor(
+                new McpToolContextCopyingTaskExecutor(executor));
+
+        logBeanSuccess("mcpToolAsyncExecutor");
+        return mcpExecutor;
+    }
+
+    /**
+     * <h2>MCP工具上下文复制任务执行器</h2>
+     *
+     * <p>这是一个内部类，用于包装 ThreadPoolTaskExecutor，确保在执行MCP工具任务时
+     * 能够正确地复制和传播工具执行相关的上下文信息。</p>
+     */
+    private record McpToolContextCopyingTaskExecutor(ThreadPoolTaskExecutor delegate) implements AsyncTaskExecutor {
+
+        /**
+         * 构造函数
+         *
+         * @param delegate 被包装的原始执行器
+         */
+        private McpToolContextCopyingTaskExecutor {
+        }
+
+        /**
+         * <h3>执行任务并复制MCP工具上下文</h3>
+         *
+         * <p>在执行MCP工具任务前，会复制当前线程的所有相关上下文到新线程中，
+         * 确保工具执行过程的完整性、可追溯性和数据一致性。特别重要的是保持
+         * 租户隔离、配额控制和执行监控的正确性。</p>
+         *
+         * @param task 要执行的MCP工具任务
+         */
+        @Override
+        public void execute(@NonNull Runnable task) {
+            // 复制当前线程的上下文信息
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            // 这里可以扩展复制MCP工具相关的上下文
+            // 例如：TenantContext tenantContext = TenantContextHolder.getContext();
+            // 例如：ToolExecutionContext toolContext = ToolExecutionContextHolder.getContext();
+            // 例如：QuotaContext quotaContext = QuotaContextHolder.getContext();
+            // 例如：MonitoringContext monitoringContext = MonitoringContextHolder.getContext();
+            // 例如：ToolAuthContext authContext = ToolAuthContextHolder.getContext();
+
+            delegate.execute(() -> {
+                try {
+                    // 在新线程中恢复所有上下文信息
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+
+                    // 恢复MCP工具相关上下文
+                    // TenantContextHolder.setContext(tenantContext);
+                    // ToolExecutionContextHolder.setContext(toolContext);
+                    // QuotaContextHolder.setContext(quotaContext);
+                    // MonitoringContextHolder.setContext(monitoringContext);
+                    // ToolAuthContextHolder.setContext(authContext);
+
+                    // 执行原始MCP工具任务
+                    task.run();
+
+                } catch (Exception e) {
+                    // 记录MCP工具任务执行异常，便于问题排查和工具调试
+                    log.error("MCP工具任务执行异常", e);
+                    // 这里可以添加工具执行失败的特殊处理
+                    // 例如：记录工具执行失败统计、发送告警通知等
+                    throw e;
+                } finally {
+                    // 清理线程本地变量，避免内存泄漏
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+
+                    // 清理MCP工具相关上下文
+                    // TenantContextHolder.clearContext();
+                    // ToolExecutionContextHolder.clearContext();
+                    // QuotaContextHolder.clearContext();
+                    // MonitoringContextHolder.clearContext();
+                    // ToolAuthContextHolder.clearContext();
+                }
+            });
+        }
+
+        /**
+         * <h3>提交任务并返回Future</h3>
+         *
+         * <p>支持异步任务的提交，返回Future对象用于获取执行结果。
+         * 同样会进行上下文复制和清理。这对于需要等待工具执行结果的场景特别重要。</p>
+         *
+         * @param task 要执行的任务
+         * @return 任务执行的Future对象
+         */
+        @NotNull
+        @Override
+        public Future<?> submit(@NonNull Runnable task) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            return delegate.submit(() -> {
+                try {
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+                    task.run();
+                } catch (Exception e) {
+                    log.error("MCP工具任务执行异常", e);
+                    throw e;
+                } finally {
+                    RequestContextHolder.resetRequestAttributes();
+                    SecurityContextHolder.clearContext();
+                }
+            });
+        }
+
+        /**
+         * <h3>提交Callable任务</h3>
+         *
+         * <p>支持有返回值的工具执行任务，这对于需要获取工具执行结果的场景非常重要。</p>
+         *
+         * @param task 要执行的Callable任务
+         * @param <T>  返回值类型
+         * @return 任务执行的Future对象
+         */
+        @NotNull
+        @Override
+        public <T> Future<T> submit(@NotNull Callable<T> task) {
+            RequestAttributes requestAttributes = RequestContextHolder.getRequestAttributes();
+            SecurityContext securityContext = SecurityContextHolder.getContext();
+
+            return delegate.submit(() -> {
+                try {
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes);
+                    }
+                    if (securityContext != null) {
+                        SecurityContextHolder.setContext(securityContext);
+                    }
+                    return task.call();
+                } catch (Exception e) {
+                    log.error("MCP工具任务执行异常", e);
                     throw e;
                 } finally {
                     RequestContextHolder.resetRequestAttributes();

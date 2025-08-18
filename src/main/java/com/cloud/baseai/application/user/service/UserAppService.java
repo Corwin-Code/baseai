@@ -17,14 +17,13 @@ import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -72,8 +71,8 @@ public class UserAppService {
     @Autowired(required = false)
     private AuthAppService authAppService;
 
-    // 异步执行器
-    private final ExecutorService asyncExecutor;
+    // 用户管理专用异步执行器
+    private final AsyncTaskExecutor userManagementAsyncExecutor;
 
     public UserAppService(
             UserRepository userRepo,
@@ -82,7 +81,8 @@ public class UserAppService {
             UserTenantRepository userTenantRepo,
             UserRoleRepository userRoleRepo,
             UserDomainService userDomainService,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            AsyncTaskExecutor userManagementAsyncExecutor) {
 
         this.userRepo = userRepo;
         this.tenantRepo = tenantRepo;
@@ -91,9 +91,7 @@ public class UserAppService {
         this.userRoleRepo = userRoleRepo;
         this.userDomainService = userDomainService;
         this.passwordEncoder = passwordEncoder;
-
-        // 创建异步执行器
-        this.asyncExecutor = Executors.newFixedThreadPool(5);
+        this.userManagementAsyncExecutor = userManagementAsyncExecutor;
     }
 
     // =================== 用户注册与认证 ===================
@@ -1026,7 +1024,7 @@ public class UserAppService {
                 } catch (Exception e) {
                     log.error("激活邮件发送失败: email={}", email, e);
                 }
-            }, asyncExecutor);
+            }, userManagementAsyncExecutor);
         }
     }
 
@@ -1042,7 +1040,7 @@ public class UserAppService {
                 } catch (Exception e) {
                     log.error("邀请邮件发送失败: email={}, orgName={}", email, orgName, e);
                 }
-            }, asyncExecutor);
+            }, userManagementAsyncExecutor);
         }
     }
 
@@ -1103,15 +1101,41 @@ public class UserAppService {
     }
 
     /**
-     * 记录审计日志
+     * 记录审计日志 - 支持异步模式
      */
     private void recordAuditLog(String action, Long targetId, String detail) {
-        if (auditService != null) {
-            try {
-                auditService.recordUserAction(action, targetId, detail);
-            } catch (Exception e) {
-                log.warn("记录审计日志失败: action={}, targetId={}", action, targetId, e);
+        recordAuditLog(action, targetId, detail, false);  // 默认同步
+    }
+
+    /**
+     * 记录审计日志 - 支持同步/异步模式
+     */
+    private void recordAuditLog(String action, Long targetId, String detail, boolean async) {
+        if (async) {
+            recordAuditLogAsync(action, targetId, detail);
+        } else {
+            if (auditService != null) {
+                try {
+                    auditService.recordUserAction(action, targetId, detail);
+                } catch (Exception e) {
+                    log.warn("记录审计日志失败: action={}, targetId={}", action, targetId, e);
+                }
             }
+        }
+    }
+
+    /**
+     * 异步记录审计日志
+     */
+    private void recordAuditLogAsync(String action, Long targetId, String detail) {
+        if (auditService != null) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    auditService.recordUserAction(action, targetId, detail);
+                } catch (Exception e) {
+                    log.warn("记录审计日志失败: action={}, targetId={}", action, targetId, e);
+                }
+            }, userManagementAsyncExecutor);
         }
     }
 

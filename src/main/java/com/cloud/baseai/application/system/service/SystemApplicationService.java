@@ -26,8 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -57,9 +55,6 @@ public class SystemApplicationService {
     private final SystemSettingRepository settingRepo;
     private final SystemTaskRepository taskRepo;
 
-    // 异步执行器
-    private final ExecutorService asyncExecutor;
-
     // 可选的用户信息服务
     @Autowired(required = false)
     private UserInfoService userInfoService;
@@ -69,7 +64,6 @@ public class SystemApplicationService {
             SystemTaskRepository taskRepo) {
         this.settingRepo = settingRepo;
         this.taskRepo = taskRepo;
-        this.asyncExecutor = Executors.newFixedThreadPool(5);
     }
 
     // =================== 系统设置管理 ===================
@@ -437,18 +431,6 @@ public class SystemApplicationService {
                 ));
             } catch (Exception e) {
                 components.put("task_queue", new SystemHealthDTO.ComponentHealth(
-                        "unhealthy", Map.of("error", e.getMessage())
-                ));
-            }
-
-            // 检查异步执行器状态
-            try {
-                String status = asyncExecutor.isShutdown() ? "unhealthy" : "healthy";
-                components.put("async_executor", new SystemHealthDTO.ComponentHealth(
-                        status, Map.of("shutdown", asyncExecutor.isShutdown())
-                ));
-            } catch (Exception e) {
-                components.put("async_executor", new SystemHealthDTO.ComponentHealth(
                         "unhealthy", Map.of("error", e.getMessage())
                 ));
             }
