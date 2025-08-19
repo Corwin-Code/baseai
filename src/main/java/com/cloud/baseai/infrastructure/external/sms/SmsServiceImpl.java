@@ -1,5 +1,6 @@
 package com.cloud.baseai.infrastructure.external.sms;
 
+import com.cloud.baseai.infrastructure.config.properties.SmsProperties;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.exception.SmsException;
 import com.cloud.baseai.infrastructure.external.sms.model.BatchSmsResult;
@@ -7,7 +8,7 @@ import com.cloud.baseai.infrastructure.external.sms.model.SmsStatus;
 import com.cloud.baseai.infrastructure.i18n.MessageManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -16,8 +17,6 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
@@ -54,38 +53,13 @@ public class SmsServiceImpl implements SmsService {
     private static final String SMS_DUPLICATE_PREFIX = "sms:duplicate:"; // 重复检测
 
     // 异步执行器，专门用于短信发送，避免阻塞主线程
-    private final ExecutorService asyncExecutor;
+    private final AsyncTaskExecutor userManagementAsyncExecutor;
+
+    // 短信服务配置属性
+    private final SmsProperties smsProps;
 
     // Redis模板，用于实现分布式缓存和限流
     private final StringRedisTemplate redisTemplate;
-
-    // 配置参数：通过application.yml注入，便于不同环境使用不同配置
-    @Value("${sms.provider:aliyun}")
-    private String smsProvider; // 短信服务商：aliyun, tencent, huawei等
-
-    @Value("${sms.access-key}")
-    private String accessKey; // 访问密钥
-
-    @Value("${sms.access-secret}")
-    private String accessSecret; // 访问密钥
-
-    @Value("${sms.signature:BaseAI}")
-    private String signature; // 短信签名
-
-    @Value("${sms.limit.per-minute:5}")
-    private int limitPerMinute; // 每分钟发送限制
-
-    @Value("${sms.limit.per-hour:20}")
-    private int limitPerHour; // 每小时发送限制
-
-    @Value("${sms.limit.per-day:100}")
-    private int limitPerDay; // 每天发送限制
-
-    @Value("${sms.async:true}")
-    private boolean asyncMode; // 是否异步发送
-
-    @Value("${sms.duplicate-check-minutes:2}")
-    private int duplicateCheckMinutes; // 重复发送检测时间窗口
 
     /**
      * 构造函数：初始化短信服务
@@ -94,16 +68,14 @@ public class SmsServiceImpl implements SmsService {
      * 因为短信发送涉及网络IO，可能会有延迟，我们不希望这个延迟影响到主业务流程。
      * 同时，短信发送的并发量相对可控，使用固定大小的线程池比较合适。</p>
      */
-    public SmsServiceImpl(StringRedisTemplate redisTemplate) {
+    public SmsServiceImpl(AsyncTaskExecutor userManagementAsyncExecutor,
+                          SmsProperties smsProps,
+                          StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
-        this.asyncExecutor = Executors.newFixedThreadPool(3, r -> {
-            Thread thread = new Thread(r, "sms-sender-" + r.hashCode());
-            thread.setDaemon(true);
-            return thread;
-        });
+        this.smsProps = smsProps;
+        this.userManagementAsyncExecutor = userManagementAsyncExecutor;
 
-        log.info("短信服务初始化完成，服务商：{}, 发送模式：{}",
-                smsProvider, asyncMode ? "异步" : "同步");
+        log.info("短信服务初始化完成，服务商：{}", smsProps.getProvider().getPrimary());
     }
 
     /**
@@ -136,7 +108,7 @@ public class SmsServiceImpl implements SmsService {
             performSecurityChecks(phoneNumber, "VERIFICATION_CODE");
 
             // 第三步：构建短信内容
-            String content = buildVerificationCodeContent(verificationCode, purpose, expireMinutes);
+            String content = buildVerificationCodeContent("BaseAI", verificationCode, purpose, expireMinutes);
 
             // 第四步：发送短信
             String messageId = sendSmsInternal(phoneNumber, content, "VERIFICATION_CODE");
@@ -182,7 +154,7 @@ public class SmsServiceImpl implements SmsService {
             }
 
             // 构建安全警报内容
-            String content = buildSecurityAlertContent(loginLocation, loginTime, deviceInfo);
+            String content = buildSecurityAlertContent("BaseAI", loginLocation, loginTime, deviceInfo);
 
             // 发送短信，使用高优先级
             String messageId = sendSmsInternal(phoneNumber, content, "SECURITY_ALERT");
@@ -440,18 +412,20 @@ public class SmsServiceImpl implements SmsService {
         Long dayCount = redisTemplate.opsForValue().increment(dayKey);
         redisTemplate.expire(dayKey, 1, TimeUnit.DAYS);
 
+        SmsProperties.RateLimitsProperties.GlobalLimitProperties globalLimitProps =
+                smsProps.getRateLimits().getGlobal();
+
         // 检查是否超出限制
-        if (minuteCount != null && minuteCount > limitPerMinute) {
-
-            throw new SmsException(ErrorCode.EXT_SMS_009, limitPerMinute);
+        if (minuteCount != null && minuteCount > globalLimitProps.getPerMinute()) {
+            throw new SmsException(ErrorCode.EXT_SMS_009, globalLimitProps.getPerMinute());
         }
 
-        if (hourCount != null && hourCount > limitPerHour) {
-            throw new SmsException(ErrorCode.EXT_SMS_010, limitPerHour);
+        if (hourCount != null && hourCount > globalLimitProps.getPerHour()) {
+            throw new SmsException(ErrorCode.EXT_SMS_010, globalLimitProps.getPerHour());
         }
 
-        if (dayCount != null && dayCount > limitPerDay) {
-            throw SmsException.rateLimitExceeded(limitPerDay);
+        if (dayCount != null && dayCount > globalLimitProps.getPerDay()) {
+            throw SmsException.rateLimitExceeded(globalLimitProps.getPerDay());
         }
     }
 
@@ -464,18 +438,19 @@ public class SmsServiceImpl implements SmsService {
     private void checkDuplicateSending(String phoneNumber) throws SmsException {
         String duplicateKey = SMS_DUPLICATE_PREFIX + phoneNumber;
         String lastSendTime = redisTemplate.opsForValue().get(duplicateKey);
+        SmsProperties.ContentProperties contentProps = smsProps.getContent();
 
         if (lastSendTime != null) {
             long timeDiff = System.currentTimeMillis() - Long.parseLong(lastSendTime);
-            if (timeDiff < (long) duplicateCheckMinutes * 60 * 1000) {
-                throw SmsException.duplicateSending(duplicateCheckMinutes);
+            if (timeDiff < (long) contentProps.getDuplicateCheckMinutes() * 60 * 1000) {
+                throw SmsException.duplicateSending(contentProps.getDuplicateCheckMinutes());
             }
         }
 
         // 记录本次发送时间
         redisTemplate.opsForValue().set(duplicateKey,
                 String.valueOf(System.currentTimeMillis()),
-                duplicateCheckMinutes, TimeUnit.MINUTES);
+                contentProps.getDuplicateCheckMinutes(), TimeUnit.MINUTES);
     }
 
     /**
@@ -485,28 +460,21 @@ public class SmsServiceImpl implements SmsService {
      * 调用相应的发送逻辑。支持同步和异步两种模式。</p>
      */
     private String sendSmsInternal(String phoneNumber, String content, String messageType) throws Exception {
-        if (asyncMode) {
-            // 异步发送：生成消息ID后立即返回，实际发送在后台进行
-            String messageId = generateMessageId();
+        // 异步发送：生成消息ID后立即返回，实际发送在后台进行
+        String messageId = generateMessageId();
 
-            CompletableFuture.runAsync(() -> {
-                try {
-                    sendSmsSync(phoneNumber, content, messageType, messageId);
-                } catch (Exception e) {
-                    log.error("异步发送短信失败: phone={}, messageId={}", phoneNumber, messageId, e);
-                    // 更新状态为失败
-                    redisTemplate.opsForValue().set(SMS_STATUS_PREFIX + messageId,
-                            SmsStatus.FAILED.name(), 1, TimeUnit.HOURS);
-                }
-            }, asyncExecutor);
+        CompletableFuture.runAsync(() -> {
+            try {
+                sendSmsSync(phoneNumber, content, messageType, messageId);
+            } catch (Exception e) {
+                log.error("异步发送短信失败: phone={}, messageId={}", phoneNumber, messageId, e);
+                // 更新状态为失败
+                redisTemplate.opsForValue().set(SMS_STATUS_PREFIX + messageId,
+                        SmsStatus.FAILED.name(), 1, TimeUnit.HOURS);
+            }
+        }, userManagementAsyncExecutor);
 
-            return messageId;
-        } else {
-            // 同步发送：等待发送完成后返回
-            String messageId = generateMessageId();
-            sendSmsSync(phoneNumber, content, messageType, messageId);
-            return messageId;
-        }
+        return messageId;
     }
 
     /**
@@ -521,12 +489,14 @@ public class SmsServiceImpl implements SmsService {
                 SmsStatus.SENDING.name(), 1, TimeUnit.HOURS);
 
         try {
-            switch (smsProvider.toLowerCase()) {
+            SmsProperties.ProviderProperties smsProvider = smsProps.getProvider();
+
+            switch (smsProvider.getPrimary().toLowerCase()) {
                 case "aliyun" -> sendViaAliyun(phoneNumber, content, messageId);
                 case "tencent" -> sendViaTencent(phoneNumber, content, messageId);
                 case "huawei" -> sendViaHuawei(phoneNumber, content, messageId);
                 case "mock" -> sendViaMock(phoneNumber, content, messageId); // 用于测试
-                default -> throw SmsException.providerUnavailable(smsProvider);
+                default -> throw SmsException.providerUnavailable(smsProvider.getPrimary());
             }
 
             // 更新状态为已发送
@@ -587,7 +557,7 @@ public class SmsServiceImpl implements SmsService {
     /**
      * 构建验证码短信内容
      */
-    private String buildVerificationCodeContent(String code, String purpose, int expireMinutes) {
+    private String buildVerificationCodeContent(String signature, String code, String purpose, int expireMinutes) {
         return String.format("【%s】您的%s验证码是：%s，有效期%d分钟，请勿泄露给他人。",
                 signature, purpose, code, expireMinutes);
     }
@@ -595,7 +565,7 @@ public class SmsServiceImpl implements SmsService {
     /**
      * 构建安全警报短信内容
      */
-    private String buildSecurityAlertContent(String location, OffsetDateTime loginTime, String deviceInfo) {
+    private String buildSecurityAlertContent(String signature, String location, OffsetDateTime loginTime, String deviceInfo) {
         String timeStr = loginTime.format(DateTimeFormatter.ofPattern("MM月dd日 HH:mm"));
         return String.format("【%s】您的账户于%s在%s通过%s登录，如非本人操作请立即修改密码。",
                 signature, timeStr, location, deviceInfo);

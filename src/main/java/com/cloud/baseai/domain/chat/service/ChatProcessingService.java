@@ -5,7 +5,7 @@ import com.cloud.baseai.domain.chat.model.ContentSafety;
 import com.cloud.baseai.domain.chat.model.ConversationQuality;
 import com.cloud.baseai.domain.chat.model.MessageRole;
 import com.cloud.baseai.infrastructure.config.properties.ChatProperties;
-import com.cloud.baseai.infrastructure.external.llm.service.ChatCompletionService;
+import com.cloud.baseai.infrastructure.external.llm.factory.ChatModelFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -35,7 +35,7 @@ public class ChatProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatProcessingService.class);
 
-    private final ChatCompletionService llmService;
+    private final ChatModelFactory chatModelFactory;
     private final ChatProperties config;
 
     // 工具意图识别的关键词模式
@@ -59,8 +59,8 @@ public class ChatProcessingService {
             "有什么工具可以帮助处理{topic}？"
     );
 
-    public ChatProcessingService(ChatCompletionService llmService, ChatProperties config) {
-        this.llmService = llmService;
+    public ChatProcessingService(ChatModelFactory chatModelFactory, ChatProperties config) {
+        this.chatModelFactory = chatModelFactory;
         this.config = config;
     }
 
