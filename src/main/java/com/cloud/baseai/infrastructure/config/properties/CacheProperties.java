@@ -92,7 +92,7 @@ public class CacheProperties {
         /**
          * 缓存预热调度表达式（每6小时）
          */
-        private String cacheWarmingSchedule = "0 */6 * * *";
+        private String cacheWarmingSchedule = "0 0 */6 * * *";
 
         /**
          * 最大缓存大小（MB）

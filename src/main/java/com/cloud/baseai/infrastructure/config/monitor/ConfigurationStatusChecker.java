@@ -54,8 +54,11 @@ public class ConfigurationStatusChecker implements ApplicationListener<Applicati
         // 环境信息
         outputEnvironmentInfo(environment);
 
+        // API文档信息
+        outputApiDocumentationInfo(environment);
+
         // 完成报告
-        outputCompletionReport();
+        outputCompletionReport(environment);
     }
 
     /**
@@ -94,6 +97,8 @@ public class ConfigurationStatusChecker implements ApplicationListener<Applicati
         moduleStatus.put("Redis缓存", isClassPresent("org.springframework.data.redis.core.RedisTemplate"));
         moduleStatus.put("国际化 (I18n)", true); // 总是启用
         moduleStatus.put("审计日志 (Audit)", true); // 总是启用
+        moduleStatus.put("API文档 (SpringDoc)", isClassPresent("org.springdoc.core.configuration.SpringDocConfiguration") &&
+                environment.getProperty("springdoc.api-docs.enabled", Boolean.class, true));
 
         // 输出状态
         moduleStatus.forEach((module, enabled) -> {
@@ -181,15 +186,99 @@ public class ConfigurationStatusChecker implements ApplicationListener<Applicati
     }
 
     /**
+     * 输出API文档信息
+     */
+    private void outputApiDocumentationInfo(Environment environment) {
+        log.info("");
+        log.info("📚 API文档信息:");
+
+        // 检查SpringDoc是否启用
+        boolean springdocEnabled = environment.getProperty("springdoc.api-docs.enabled", Boolean.class, true);
+        boolean swaggerUiEnabled = environment.getProperty("springdoc.swagger-ui.enabled", Boolean.class, true);
+
+        if (springdocEnabled && isClassPresent("org.springdoc.core.configuration.SpringDocConfiguration")) {
+            String port = environment.getProperty("server.port", "8080");
+            String contextPath = environment.getProperty("server.servlet.context-path", "");
+            String baseUrl = "http://localhost:" + port + contextPath;
+
+            // Swagger UI地址
+            if (swaggerUiEnabled) {
+                String swaggerPath = environment.getProperty("springdoc.swagger-ui.path", "/swagger-ui.html");
+                log.info("   📖 Swagger UI: {}{}", baseUrl, swaggerPath);
+
+                // 如果有分组配置，显示分组信息
+                if (hasGroupConfigs(environment)) {
+                    log.info("   📑 API分组: 已配置多个API分组，可在文档页面切换查看");
+                }
+            }
+
+            // OpenAPI JSON地址
+            String apiDocsPath = environment.getProperty("springdoc.api-docs.path", "/v3/api-docs");
+            log.info("   📄 OpenAPI JSON: {}{}", baseUrl, apiDocsPath);
+
+            // 状态
+            log.info("   📊 文档状态: ✅ 可用");
+
+        } else {
+            log.info("   📊 文档状态: ❌ 已禁用或依赖缺失");
+            if (!springdocEnabled) {
+                log.info("   💡 启用提示: 设置 springdoc.api-docs.enabled=true");
+            }
+            if (!isClassPresent("org.springdoc.core.configuration.SpringDocConfiguration")) {
+                log.info("   💡 依赖提示: 需要添加 springdoc-openapi-starter-webmvc-ui 依赖");
+            }
+        }
+    }
+
+    /**
+     * 检查是否有分组配置
+     */
+    private boolean hasGroupConfigs(Environment environment) {
+        // 检查是否配置了group-configs
+        try {
+            String[] groups = environment.getProperty("springdoc.group-configs[0].group", String[].class);
+            return groups != null && groups.length > 0;
+        } catch (Exception e) {
+            // 如果无法解析配置，尝试其他方式
+            return environment.containsProperty("springdoc.group-configs");
+        }
+    }
+
+    /**
      * 输出完成报告
      */
-    private void outputCompletionReport() {
+    private void outputCompletionReport(Environment environment) {
         log.info("");
         log.info("🎉 BaseAI 应用启动完成!");
         log.info("   配置验证: 全部通过");
         log.info("   服务状态: 就绪");
-        log.info("   访问地址: http://localhost:{}",
-                System.getProperty("server.port", "8080"));
+
+        String port = environment.getProperty("server.port", "8080");
+        String contextPath = environment.getProperty("server.servlet.context-path", "");
+        String baseUrl = "http://localhost:" + port + contextPath;
+
+        log.info("   主服务地址: {}", baseUrl);
+
+        // 显示重要的访问地址
+        log.info("");
+        log.info("🔗 重要访问地址:");
+
+        // API文档地址
+        boolean springdocEnabled = environment.getProperty("springdoc.api-docs.enabled", Boolean.class, true);
+        if (springdocEnabled && isClassPresent("org.springdoc.core.configuration.SpringDocConfiguration")) {
+            String swaggerPath = environment.getProperty("springdoc.swagger-ui.path", "/swagger-ui.html");
+            log.info("   📚 API文档: {}{}", baseUrl, swaggerPath);
+        }
+
+        // 健康检查地址
+        String managementPort = environment.getProperty("management.server.port");
+        if (managementPort != null) {
+            log.info("   🏥 健康检查: http://localhost:{}/actuator/health", managementPort);
+            log.info("   📊 监控指标: http://localhost:{}/actuator/metrics", managementPort);
+        } else {
+            log.info("   🏥 健康检查: {}/actuator/health", baseUrl);
+        }
+
         log.info("");
         log.info("╔══════════════════════════════════════════════════════════════╗");
         log.info("║                    🚀 系统已就绪，开始服务! 🚀                 　║");

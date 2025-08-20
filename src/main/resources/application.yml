@@ -5,9 +5,11 @@
 # =================== 应用基础配置 ===================
 spring:
   application:
+    # 应用名
     name: baseai
   main:
-    lazy-initialization: true
+    # 懒加载
+    lazy-initialization: false
     allow-bean-definition-overriding: false
 
   # =================== 数据库配置 ===================
@@ -62,30 +64,39 @@ spring:
   # =================== Redis 缓存配置 ===================
   data:
     redis:
+      # Redis 主机
       host: ${REDIS_HOST:172.18.20.209}
+      # 端口
       port: ${REDIS_PORT:6379}
+      # 密码（生产走密管）
       password: ${REDIS_PASSWORD:}
+      # 库序号（0~15）
       database: ${REDIS_DATABASE:0}
-      timeout: ${REDIS_TIMEOUT:5000ms}
-      connect-timeout: ${REDIS_CONNECT_TIMEOUT:3000ms}
+      # 命令超时（建议用 Duration，示例 8 秒）
+      timeout: ${REDIS_TIMEOUT:8s}
+      # 连接超时（示例 5 秒）
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:5s}
 
       # Lettuce 连接池配置（推荐使用 Lettuce 而不是 Jedis）
       lettuce:
         pool:
-          max-active: ${REDIS_POOL_MAX_ACTIVE:8}
-          max-idle: ${REDIS_POOL_MAX_IDLE:8}
-          min-idle: ${REDIS_POOL_MIN_IDLE:0}
-          max-wait: ${REDIS_POOL_MAX_WAIT:5000ms}
+          # 最大连接数（并发适中起步）
+          max-active: ${REDIS_POOL_MAX_ACTIVE:64}
+          # 最大空闲连接
+          max-idle: ${REDIS_POOL_MAX_IDLE:32}
+          # 最小空闲连接
+          min-idle: ${REDIS_POOL_MIN_IDLE:8}
+          # 取连接最大等待时间
+          max-wait: ${REDIS_POOL_MAX_WAIT:5s}
 
   # Spring Cache 配置
   cache:
     type: redis
     redis:
       # 默认缓存过期时间（30分钟）
-      time-to-live: ${CACHE_DEFAULT_TTL:1800000}
+      time-to-live: ${CACHE_DEFAULT_TTL:30m}
       cache-null-values: false
       use-key-prefix: true
-      key-prefix: "baseai:"
 
   # ========== 消息队列配置 (可选) ==========
   # rabbitmq:
@@ -96,94 +107,176 @@ spring:
   #   virtual-host: ${MQ_VHOST:/}
   #   connection-timeout: 5000ms
 
-  # =================== Spring Security 配置 ===================
-  security:
-    user:
-      name: ${SECURITY_USER:admin}
-      password: ${SECURITY_PASSWORD:admin}
-      roles: ADMIN
-
   # =================== 国际化配置 ===================
   messages:
     basename: messages/errors
     encoding: UTF-8
+    # 生产：缓存 1 小时；开发可覆盖为 0s 以便热更新
     cache-duration: PT1H
+    # 不回退到系统 Locale，避免环境差异带来的文案异常
     fallback-to-system-locale: false
+    # 始终按 MessageFormat 解析，占位符需要用 {0}、{1}；注意单引号需写成 ''
     always-use-message-format: true
 
   # =================== 邮件服务基础配置 ===================
   mail:
+    # SMTP 主机（企业邮箱）
     host: ${MAIL_HOST:smtp.exmail.qq.com}
+    # 587 = 明文连接 + STARTTLS 升级
     port: ${MAIL_PORT:587}
+    # 发信账号（建议专用账号）
     username: ${MAIL_USERNAME:}
+    # 发信密码/授权码（不要硬编码）
     password: ${MAIL_PASSWORD:}
+    # 协议：smtp（STARTTLS 场景）
     protocol: smtp
-    test-connection: false
+    # 默认编码
     default-encoding: UTF-8
+    # 启动时是否尝试连接（prod 一般 false；运维需要可设 true）
+    test-connection: false
     properties:
       mail:
         smtp:
+          # 启用 SMTP 身份认证
           auth: true
+          # ===== STARTTLS（587 端口）=====
           starttls:
+            # 允许 STARTTLS
             enable: true
+            # 要求必须使用 TLS，否则失败（更安全）
             required: true
-          connectiontimeout: ${MAIL_CONNECTION_TIMEOUT:5000}
-          timeout: ${MAIL_TIMEOUT:5000}
-          writetimeout: ${MAIL_WRITE_TIMEOUT:5000}
+          # ===== TLS/SSL 细化配置 =====
+          ssl:
+            # 限定协议版本，避免降级
+            protocols: "TLSv1.2 TLSv1.3"
+            # 校验证书主机名，防止中间人
+            checkserveridentity: true
+            # 如遇信任链异常可临时指定（更推荐安装正确 CA）
+            # trust: "smtp.exmail.qq.com"
+          # ===== 连接/读写超时（毫秒）=====
+          # 连接超时（建议 10s）
+          connectiontimeout: ${MAIL_CONNECTION_TIMEOUT:10000}
+          # 读取超时（建议 15s）
+          timeout: ${MAIL_TIMEOUT:15000}
+          # 写入超时（建议 15s）
+          writetimeout: ${MAIL_WRITE_TIMEOUT:15000}
+          # ===== 连接池/性能（大批量发送可启用）=====
+          # 批量发送可改 true，复用连接减少握手
+          pool: false
+          # 连接池大小（根据并发量与服务端限流设置）
+          # pool.size: 5
+          # 允许 8bit 传输（多数现代服务器兼容）
+          allow8bitmime: true
 
 # =================== 服务器配置 ===================
 server:
+  # 服务端口（可用环境变量覆盖）
   port: ${SERVER_PORT:8080}
   servlet:
+    # 应用上下文路径，默认根(/)
     context-path: ${SERVER_CONTEXT_PATH:}
     encoding:
+      # 统一请求/响应编码
       charset: UTF-8
+      # 无论请求头如何都强制使用 UTF-8
       force: true
-  # 启用响应压缩，提高网络传输效率
+
+  # 启用响应压缩（GZIP），仅对文本类 MIME 生效
   compression:
     enabled: true
-    mime-types: text/html,text/css,application/javascript,application/json,text/plain
+    mime-types: >-
+      text/html,text/css,text/plain,
+      application/javascript,application/json,
+      application/xml,text/xml,
+      application/x-yaml,
+      application/problem+json,
+      application/ndjson
+    # 小于 1KB 的响应不压缩，避免 CPU 开销
     min-response-size: 1024
-  # 错误页面配置
+
+  # 错误页面与错误信息展示策略
   error:
     whitelabel:
+      # 禁用默认白标错误页（使用自定义错误页或统一异常处理）
       enabled: false
+    # 生产安全：不返回堆栈
     include-stacktrace: never
+    # ⛔ 建议生产改为 never 或 on_param（见下方按环境覆盖）
     include-message: always
+
+  # HTTP/2（在 HTTPS/TLS 场景显著提升性能）
+  http2:
+    enabled: true
+
+  # 反向代理/负载均衡场景需要正确处理 X-Forwarded-* 头
+  forward-headers-strategy: native
+  # spring boot 3.4+ 支持：framework/native；native 走容器实现，例如 tomcat RemoteIpValve
+
+  # Tomcat 资源与报文限制（按压测结果调整）
+  tomcat:
+    threads:
+      # 最大工作线程（并发量大可适当上调）
+      max: 200
+      min-spare: 20
+    # 等待队列长度
+    accept-count: 100
+    # 表单上传大小限制（防御性）
+    max-http-form-post-size: 2MB
+    # HTTP 头大小限制（防御性）
+    max-http-response-header-size: 16KB
+    # 连接被关闭前吞入的最大请求体（防御性）
+    max-swallow-size: 2MB
 
 # =================== 管理端点配置 ===================
 management:
   server:
+    # 管理端口（建议仅内网或加鉴权）
     port: ${MGMT_PORT:8081}
   endpoints:
     web:
+      # 统一前缀
       base-path: /actuator
       exposure:
         # 暴露健康检查、指标等监控端点
         include: health,info,metrics,scheduledtasks,prometheus,loggers,env,configprops
   endpoint:
     health:
-      # 显示详细的健康检查信息
+      # 健康细节仅授权可见
       show-details: when-authorized
-      # 健康检查组件配置
+      # 总览显示组件（与上行配合更安全）
       show-components: always
+      # 启用 liveness/readiness（K8s 友好）
+      probes:
+        enabled: true
     metrics:
+      # 仅在受控网络/鉴权下使用；否则建议受限
       access: unrestricted
     prometheus:
+      # 同上
       access: unrestricted
   prometheus:
     metrics:
       export:
+        # 暴露 /actuator/prometheus
         enabled: true
   metrics:
     distribution:
       percentiles-histogram:
+        # 为 HTTP 请求开启直方图（P95/P99）
         "[http.server.requests]": true
+        # 自定义计时器直方图
         "[baseai.chat.response.time]": true
         "[baseai.kb.search.time]": true
+      # 为关键接口定义 SLO 分桶（PromQL 友好）
+      slo:
+        "[http.server.requests]": 50ms,100ms,200ms,300ms,500ms,1s,2s,5s
     tags:
+      # 统一标签
       application: ${spring.application.name}
+      # 环境标签（dev/qa/prod）
       environment: ${spring.profiles.active}
+      # 可选：实例标识（K8s 建议用 HOSTNAME）
+      # instanceId: ${HOSTNAME:${random.uuid}}
   health:
     db:
       enabled: true
@@ -195,27 +288,42 @@ management:
 # =================== 日志配置 ===================
 logging:
   level:
+    # 全局日志级别（默认 INFO）
     root: ${LOG_LEVEL_ROOT:INFO}
+    # 应用主包日志级别（默认 DEBUG）
     com.cloud.baseai: ${LOG_LEVEL_APP:DEBUG}
+    # Spring Web 请求日志
     org.springframework.web: ${LOG_LEVEL_SPRING_WEB:INFO}
+    # Spring Security 日志
     org.springframework.security: ${LOG_LEVEL_SECURITY:INFO}
+    # Hibernate SQL 输出日志（仅 WARN）
     org.hibernate.SQL: ${LOG_LEVEL_SQL:WARN}
+    # Hibernate 参数绑定日志（仅 WARN）
     org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    # Hibernate 连接池日志
     org.hibernate.orm.connections.pooling: WARN
+    # Spring Cache 相关日志
     org.springframework.cache: DEBUG
+    # 阿里云 AI 相关日志
     com.alibaba.cloud.ai: INFO
+    # Spring AI 相关日志
     org.springframework.ai: INFO
-    # Spring 调度相关日志
+    # Spring 调度（定时任务）日志
     org.springframework.scheduling: INFO
   pattern:
     console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"
+    # 文件日志格式：时间戳 + 线程 + 级别（左对齐5位）+ 最多50字符类名 + 消息
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
   file:
+    # 日志文件路径（默认 logs/baseai-cloud.log）
     name: ${LOG_FILE:logs/baseai-cloud.log}
   logback:
     rollingpolicy:
+      # 单文件最大 100MB，超过后切分
       max-file-size: ${LOG_FILE_MAX_SIZE:100MB}
+      # 保留最近 30 天的日志归档
       max-history: ${LOG_FILE_MAX_HISTORY:30}
+      # 所有归档总大小上限 1GB，超过则删除最旧
       total-size-cap: ${LOG_FILE_TOTAL_SIZE:1GB}
 
 # =================== API 文档配置 ===================
@@ -227,12 +335,51 @@ springdoc:
     enabled: ${SPRINGDOC_ENABLED:true}
     path: /swagger-ui.html
     disable-swagger-default-url: true
+    # 设置默认显示最重要的API分组
+    urls-primary-name: 'kb-api'
+    # 设置操作和标签的排序
+    operations-sorter: alpha
+    tags-sorter: none
+    # 设置默认的模型渲染深度
+    default-model-expand-depth: 2
+    # 设置默认的模型示例展开深度
+    default-models-expand-depth: 1
+    # 显示请求持续时间
+    display-request-duration: true
   show-actuator: false
   group-configs:
-    - group: 'public-api'
-      paths-to-match: '/api/public/**'
-    - group: 'admin-api'
-      paths-to-match: '/api/admin/**'
+    # 核心业务API - 最常用的功能
+    - group: 'kb-api'
+      display-name: '📚 知识库API'
+      paths-to-match: '/api/v1/kb/**'
+    - group: 'chat-api'
+      display-name: '💬 对话API'
+      paths-to-match: '/api/v1/chat/**'
+
+    # 用户相关API
+    - group: 'auth-api'
+      display-name: '🔐 认证授权API'
+      paths-to-match: '/api/v1/auth/**'
+    - group: 'user-api'
+      display-name: '👥 用户管理API'
+      paths-to-match: '/api/v1/users/**'
+
+    # 扩展功能API
+    - group: 'flow-api'
+      display-name: '🔄 流程编排API'
+      paths-to-match: '/api/v1/flows/**'
+    - group: 'misc-api'
+      display-name: '🔧 其他API'
+      paths-to-match:
+        - '/api/v1/misc/**'
+        - '/api/v1/mcp/**'
+
+    # 管理功能API - 使用频率较低
+    - group: 'system-api'
+      display-name: '⚙️ 系统管理API'
+      paths-to-match:
+        - '/api/v1/system/**'
+        - '/api/v1/audit/**'
 
   # =================== 应用特定配置 ===================
   # 注意：以下配置为应用框架级别配置，不可动态修改
@@ -951,9 +1098,9 @@ baseai:
   cache:
     # Redis缓存配置
     redis:
-      # 默认过期时间（秒）
+      # 默认过期时间（秒），默认 1 小时
       default-ttl-seconds: ${CACHE_REDIS_DEFAULT_TTL:3600}
-      # 最大过期时间（秒）
+      # 最大过期时间（秒），最大 24 小时
       max-ttl-seconds: ${CACHE_REDIS_MAX_TTL:86400}
       # 键名前缀
       key-prefix: ${CACHE_REDIS_PREFIX:baseai:}
@@ -977,7 +1124,7 @@ baseai:
       # 是否启用缓存预热
       enable-cache-warming: ${CACHE_APP_WARMING:true}
       # 缓存预热调度表达式（每6小时）
-      cache-warming-schedule: ${CACHE_APP_WARMING_SCHEDULE:0 */6 * * *}
+      cache-warming-schedule: ${CACHE_APP_WARMING_SCHEDULE:0 0 */6 * * *}
       # 最大缓存大小（MB）
       max-cache-size-mb: ${CACHE_APP_MAX_SIZE:512}
       # 缓存淘汰策略：LRU、LFU、FIFO
