@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -330,17 +331,17 @@ public class AnthropicAutoConfiguration extends BaseAutoConfiguration {
      * <p>这是主要的聊天模型Bean，集成了所有自定义配置，
      * 包括API客户端、默认选项和重试策略。</p>
      *
-     * @param anthropicApi           自定义的Anthropic API
-     * @param chatOptions            自定义的聊天选项
-     * @param anthropicRetryTemplate 重试模板
+     * @param anthropicApi  自定义的Anthropic API
+     * @param chatOptions   自定义的聊天选项
+     * @param retryTemplate 重试模板
      * @return 配置好的聊天模型
      */
-    @Bean
+    @Bean(name = "anthropicChatModel")
     @ConditionalOnBean(AnthropicApi.class)
-    public AnthropicChatModel customAnthropicChatModel(
+    public AnthropicChatModel anthropicChatModel(
             AnthropicApi anthropicApi,
             AnthropicChatOptions chatOptions,
-            RetryTemplate anthropicRetryTemplate) {
+            @Qualifier("anthropicRetryTemplate") RetryTemplate retryTemplate) {
 
         logBeanCreation("AnthropicChatModel", "Anthropic聊天模型主Bean");
 
@@ -349,7 +350,7 @@ public class AnthropicAutoConfiguration extends BaseAutoConfiguration {
             AnthropicChatModel chatModel = AnthropicChatModel.builder()
                     .anthropicApi(anthropicApi)
                     .defaultOptions(chatOptions)
-                    .retryTemplate(anthropicRetryTemplate)
+                    .retryTemplate(retryTemplate)
                     .build();
 
             logBeanSuccess("AnthropicChatModel");

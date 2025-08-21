@@ -179,6 +179,55 @@ public class AsyncAutoConfiguration extends BaseAutoConfiguration {
     }
 
     /**
+     * <h3>创建Redis消息处理专用的异步执行器</h3>
+     *
+     * <p>这个执行器专门用于处理Redis消息相关的异步任务。Redis消息处理具有典型的IO密集型特征：</p>
+     * <ul>
+     *   <li><b>网络IO密集</b>：大量时间用于等待消息到达和网络传输</li>
+     *   <li><b>长时间运行</b>：监听器需要持续运行等待消息</li>
+     *   <li><b>突发性处理</b>：消息可能集中到达需要快速处理</li>
+     *   <li><b>轻量级任务</b>：单个消息处理通常较为简单</li>
+     * </ul>
+     *
+     * <p>针对Redis消息处理的特点，该执行器采用了以下优化策略：</p>
+     * <ul>
+     *   <li>中等线程数配置，适应IO等待和突发处理需求</li>
+     *   <li>较大队列容量，缓冲消息处理的突发需求</li>
+     *   <li>使用调用者运行策略，确保重要消息不被丢弃</li>
+     *   <li>较长线程存活时间，适应长时间运行特性</li>
+     * </ul>
+     *
+     * @return 配置好的Redis消息处理异步任务执行器
+     */
+    @Bean(name = "redisMessageAsyncExecutor")
+    public AsyncTaskExecutor redisMessageAsyncExecutor() {
+        logBeanCreation("redisMessageAsyncExecutor", "Redis消息处理专用异步执行器");
+
+        ThreadPoolTaskExecutor executor = createBaseExecutor("redisMessageAsyncExecutor");
+
+        // Redis消息处理优化配置
+        int redisMaxPoolSize = Math.max(16, asyncProps.getMaxPoolSize());
+        int redisCorePoolSize = Math.max(4, asyncProps.getCorePoolSize() / 2);
+        int redisQueueCapacity = Math.max(500, asyncProps.getQueueCapacity() * 2);
+
+        executor.setMaxPoolSize(redisMaxPoolSize);
+        executor.setCorePoolSize(redisCorePoolSize);
+        executor.setQueueCapacity(redisQueueCapacity);
+
+        executor.setThreadNamePrefix("BaseAI-Redis-Message-");
+        executor.setKeepAliveSeconds(Math.max(300, asyncProps.getKeepAliveSeconds()));
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+
+        logInfo("Redis消息执行器配置 - 核心线程: %d, 最大线程: %d, 队列容量: %d",
+                redisCorePoolSize, redisMaxPoolSize, redisQueueCapacity);
+
+        AsyncTaskExecutor securityAwareExecutor = new DelegatingSecurityContextAsyncTaskExecutor(executor);
+        logBeanSuccess("redisMessageAsyncExecutor");
+
+        return securityAwareExecutor;
+    }
+
+    /**
      * <h3>创建Chat模块专用的异步执行器</h3>
      *
      * <p>这个执行器专门用于处理Chat相关的异步任务。

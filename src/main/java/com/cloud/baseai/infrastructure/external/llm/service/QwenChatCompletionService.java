@@ -17,10 +17,13 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.model.StreamingChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -47,12 +50,13 @@ import java.util.function.Consumer;
  * </ul>
  */
 @Service
+@ConditionalOnBean(DashScopeChatModel.class)
 public class QwenChatCompletionService implements ChatCompletionService {
 
     private static final Logger log = LoggerFactory.getLogger(QwenChatCompletionService.class);
 
     private final LlmProperties properties;
-    private final DashScopeChatModel chatModel;
+    private final ChatModel chatModel;
     private final StreamingChatModel streamingChatModel;
     private final Map<String, ModelPricing> modelPricingMap;
     private final ObjectMapper objectMapper;
@@ -67,7 +71,7 @@ public class QwenChatCompletionService implements ChatCompletionService {
      * @param objectMapper JSON对象映射器，用于序列化工具调用信息
      */
     public QwenChatCompletionService(LlmProperties properties,
-                                     DashScopeChatModel chatModel,
+                                     @Qualifier("qwenChatModel") ChatModel chatModel,
                                      ObjectMapper objectMapper) {
         this.properties = properties;
         this.chatModel = chatModel;

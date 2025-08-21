@@ -16,6 +16,7 @@ import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
@@ -415,6 +416,7 @@ public class OpenAiAutoConfiguration extends BaseAutoConfiguration {
      *
      * @return 配置好的重试模板
      */
+    @Primary
     @Bean(name = "openAiRetryTemplate")
     @ConditionalOnProperty(prefix = "baseai.llm.openai", name = "max-retries", matchIfMissing = false)
     public RetryTemplate openAiRetryTemplate() {
@@ -445,6 +447,7 @@ public class OpenAiAutoConfiguration extends BaseAutoConfiguration {
     /**
      * 使用默认重试模板（当没有配置自定义重试次数时）
      */
+    @Primary
     @Bean(name = "openAiRetryTemplate")
     @ConditionalOnMissingBean(name = "openAiRetryTemplate")
     public RetryTemplate openAiDefaultRetryTemplate() {
@@ -475,18 +478,19 @@ public class OpenAiAutoConfiguration extends BaseAutoConfiguration {
      * <p>这是主要的聊天模型Bean，集成了所有自定义配置，
      * 包括API客户端、默认选项和重试策略。</p>
      *
-     * @param openAiApi           自定义的OpenAI API
-     * @param chatOptions         自定义的聊天选项
-     * @param openAiRetryTemplate 重试模板
+     * @param openAiApi     自定义的OpenAI API
+     * @param chatOptions   自定义的聊天选项
+     * @param retryTemplate 重试模板
      * @return 配置好的聊天模型
      */
     @Bean
     @Primary
     @ConditionalOnBean(OpenAiApi.class)
-    public OpenAiChatModel customOpenAiChatModel(
+    @ConditionalOnProperty(prefix = "baseai.llm.openai", name = "enabled", havingValue = "true")
+    public OpenAiChatModel openAiChatModel(
             OpenAiApi openAiApi,
             OpenAiChatOptions chatOptions,
-            @Qualifier("openAiRetryTemplate") RetryTemplate openAiRetryTemplate) {
+            @Qualifier("openAiRetryTemplate") RetryTemplate retryTemplate) {
 
         logBeanCreation("OpenAiChatModel", "OpenAI聊天模型主Bean");
 
@@ -495,7 +499,7 @@ public class OpenAiAutoConfiguration extends BaseAutoConfiguration {
             OpenAiChatModel chatModel = OpenAiChatModel.builder()
                     .openAiApi(openAiApi)
                     .defaultOptions(chatOptions)
-                    .retryTemplate(openAiRetryTemplate)
+                    .retryTemplate(retryTemplate)
                     .build();
 
             logBeanSuccess("OpenAiChatModel");
@@ -516,18 +520,22 @@ public class OpenAiAutoConfiguration extends BaseAutoConfiguration {
      *
      * <p>专门为OpenAIEmbeddingService创建的嵌入模型Bean，使用独立的配置和选项。</p>
      *
-     * @param openAiApi           由Spring注入的OpenAI API实例
-     * @param embeddingOptions    由Spring注入的嵌入模型选项
-     * @param openAiRetryTemplate 由Spring注入的重试模板
+     * @param openAiApi        由Spring注入的OpenAI API实例
+     * @param embeddingOptions 由Spring注入的嵌入模型选项
+     * @param retryTemplate    由Spring注入的重试模板
      * @return 配置好的嵌入模型
      */
+    @Primary
     @Bean(name = "openAiEmbeddingModel")
-    @ConditionalOnProperty(prefix = "baseai.llm.openai", name = "enabled", havingValue = "true")
+    @ConditionalOnProperties({
+            @ConditionalOnProperty(prefix = "baseai.llm.openai", name = "enabled", havingValue = "true"),
+            @ConditionalOnProperty(prefix = "baseai.llm", name = "default-provider", havingValue = "openai")
+    })
     @ConditionalOnBean(OpenAiApi.class)
     public OpenAiEmbeddingModel openAiEmbeddingModel(
             OpenAiApi openAiApi,
             OpenAiEmbeddingOptions embeddingOptions,
-            @Qualifier("openAiRetryTemplate") RetryTemplate openAiRetryTemplate) {
+            @Qualifier("openAiRetryTemplate") RetryTemplate retryTemplate) {
 
         logBeanCreation("OpenAiEmbeddingModel", "OpenAI嵌入模型专用Bean");
 
@@ -536,7 +544,7 @@ public class OpenAiAutoConfiguration extends BaseAutoConfiguration {
                     openAiApi,
                     MetadataMode.ALL,
                     embeddingOptions,
-                    openAiRetryTemplate
+                    retryTemplate
             );
 
             logInfo("嵌入模型配置完成 - 模型: %s, 维度: %s",

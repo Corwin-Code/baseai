@@ -14,8 +14,11 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -40,6 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * </ul>
  */
 @Service
+@ConditionalOnBean(DashScopeEmbeddingModel.class)
 public class QwenEmbeddingService implements EmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(QwenEmbeddingService.class);
@@ -51,7 +55,7 @@ public class QwenEmbeddingService implements EmbeddingService {
 
     private final LlmProperties llmProperties;
     private final KnowledgeBaseProperties kbProperties;
-    private final DashScopeEmbeddingModel embeddingModel;
+    private final EmbeddingModel embeddingModel;
 
     /**
      * 向量缓存，基于文本内容哈希
@@ -72,7 +76,7 @@ public class QwenEmbeddingService implements EmbeddingService {
      */
     public QwenEmbeddingService(LlmProperties llmProperties,
                                 KnowledgeBaseProperties kbProperties,
-                                DashScopeEmbeddingModel embeddingModel) {
+                                @Qualifier("qwenEmbeddingModel") EmbeddingModel embeddingModel) {
         this.llmProperties = llmProperties;
         this.kbProperties = kbProperties;
         this.embeddingModel = embeddingModel;

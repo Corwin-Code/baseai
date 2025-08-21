@@ -168,6 +168,30 @@ spring:
           # 允许 8bit 传输（多数现代服务器兼容）
           allow8bitmime: true
 
+  # =================== AI服务默认配置 ===================
+  ai:
+    model:
+      # 禁用官方Chat自动装配
+      chat: none
+      # 禁用默认文本向量化模型
+      embedding: none
+      # 禁用默认文生图模型
+      image: none
+      # 禁用默认语音模型
+      audio:
+        speech: none
+  autoconfigure:
+    exclude:
+      # —— Alibaba DashScope
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAgentAutoConfiguration
+      - com.alibaba.cloud.ai.autoconfigure.dashscope.DashScopeAutoConfiguration
+        
+      # —— OpenAI（官方 Spring AI）模块
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration  # ASR
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration          # 审核
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration               # 图像
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration         # TTS
+
 # =================== 服务器配置 ===================
 server:
   # 服务端口（可用环境变量覆盖）

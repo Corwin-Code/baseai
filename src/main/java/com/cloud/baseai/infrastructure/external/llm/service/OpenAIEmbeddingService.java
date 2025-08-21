@@ -15,7 +15,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
 import org.springframework.ai.embedding.EmbeddingResponse;
+import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -48,6 +51,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * </ul>
  */
 @Service
+@ConditionalOnBean(OpenAiEmbeddingModel.class)
 public class OpenAIEmbeddingService implements EmbeddingService {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIEmbeddingService.class);
@@ -81,7 +85,7 @@ public class OpenAIEmbeddingService implements EmbeddingService {
      */
     public OpenAIEmbeddingService(LlmProperties llmProperties,
                                   KnowledgeBaseProperties kbProperties,
-                                  EmbeddingModel embeddingModel) {
+                                  @Qualifier("openAiEmbeddingModel") EmbeddingModel embeddingModel) {
         this.llmProperties = llmProperties;
         this.kbProperties = kbProperties;
         this.embeddingModel = embeddingModel;

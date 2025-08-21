@@ -13,10 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.*;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -498,17 +495,18 @@ public class QwenAutoConfiguration extends BaseAutoConfiguration {
      * <p>这是主要的聊天模型Bean，集成了所有自定义配置，
      * 包括API客户端、默认选项和重试策略。</p>
      *
-     * @param dashScopeApi      自定义的DashScope API
-     * @param chatOptions       自定义的聊天选项
-     * @param qwenRetryTemplate 重试模板
+     * @param dashScopeApi  自定义的DashScope API
+     * @param chatOptions   自定义的聊天选项
+     * @param retryTemplate 重试模板
      * @return 配置好的聊天模型
      */
-    @Bean
+    @Bean(name = "qwenChatModel")
+    @ConditionalOnProperty(prefix = "baseai.llm.qwen", name = "enabled", havingValue = "true")
     @ConditionalOnBean(DashScopeApi.class)
-    public DashScopeChatModel dashScopeChatModel(
+    public DashScopeChatModel qwenChatModel(
             DashScopeApi dashScopeApi,
             DashScopeChatOptions chatOptions,
-            @Qualifier("qwenRetryTemplate") RetryTemplate qwenRetryTemplate) {
+            @Qualifier("qwenRetryTemplate") RetryTemplate retryTemplate) {
 
         logBeanCreation("DashScopeChatModel", "通义千问聊天模型主Bean");
 
@@ -517,7 +515,7 @@ public class QwenAutoConfiguration extends BaseAutoConfiguration {
             DashScopeChatModel chatModel = DashScopeChatModel.builder()
                     .dashScopeApi(dashScopeApi)
                     .defaultOptions(chatOptions)
-                    .retryTemplate(qwenRetryTemplate)
+                    .retryTemplate(retryTemplate)
                     .build();
 
             logBeanSuccess("DashScopeChatModel");
@@ -537,18 +535,21 @@ public class QwenAutoConfiguration extends BaseAutoConfiguration {
      *
      * <p>专门为QwenEmbeddingService创建的嵌入模型Bean，使用独立的配置和选项。</p>
      *
-     * @param dashScopeApi      由Spring注入的DashScope API实例
-     * @param embeddingOptions  由Spring注入的嵌入模型选项
-     * @param qwenRetryTemplate 由Spring注入的重试模板
+     * @param dashScopeApi     由Spring注入的DashScope API实例
+     * @param embeddingOptions 由Spring注入的嵌入模型选项
+     * @param retryTemplate    由Spring注入的重试模板
      * @return 配置好的嵌入模型
      */
     @Bean(name = "qwenEmbeddingModel")
-    @ConditionalOnProperty(prefix = "baseai.llm.qwen", name = "enabled", havingValue = "true")
+    @ConditionalOnProperties({
+            @ConditionalOnProperty(prefix = "baseai.llm.qwen", name = "enabled", havingValue = "true"),
+            @ConditionalOnProperty(prefix = "baseai.llm", name = "default-provider", havingValue = "qwen")
+    })
     @ConditionalOnBean(DashScopeApi.class)
     public DashScopeEmbeddingModel qwenEmbeddingModel(
             DashScopeApi dashScopeApi,
             DashScopeEmbeddingOptions embeddingOptions,
-            @Qualifier("qwenRetryTemplate") RetryTemplate qwenRetryTemplate) {
+            @Qualifier("qwenRetryTemplate") RetryTemplate retryTemplate) {
 
         logBeanCreation("QwenEmbeddingModel", "通义千问嵌入模型专用Bean");
 
@@ -557,7 +558,7 @@ public class QwenAutoConfiguration extends BaseAutoConfiguration {
                     dashScopeApi,
                     MetadataMode.ALL,
                     embeddingOptions,
-                    qwenRetryTemplate
+                    retryTemplate
             );
 
             logInfo("嵌入模型配置完成 - 模型: %s, 维度: %s",

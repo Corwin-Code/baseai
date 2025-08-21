@@ -14,18 +14,16 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.model.StreamingChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.ai.retry.RetryUtils;
-import org.springframework.http.HttpHeaders;
-import org.springframework.retry.support.RetryTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
@@ -43,12 +41,13 @@ import java.util.function.Consumer;
  * 强大抽象能力，简化了与OpenAI API的集成，同时保持了原有的业务功能。</p>
  */
 @Service
+@ConditionalOnBean(OpenAiChatModel.class)
 public class OpenAIChatCompletionService implements ChatCompletionService {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatCompletionService.class);
 
     private final LlmProperties properties;
-    private final OpenAiChatModel chatModel;
+    private final ChatModel chatModel;
     private final StreamingChatModel streamingChatModel;
     private final Map<String, ModelPricing> modelPricingMap;
     private final ObjectMapper objectMapper;
@@ -59,14 +58,13 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
      * @param properties   LLM配置属性
      * @param objectMapper JSON对象映射器
      */
-    public OpenAIChatCompletionService(LlmProperties properties, ObjectMapper objectMapper) {
+    public OpenAIChatCompletionService(LlmProperties properties,
+                                       @Qualifier("openAiChatModel") ChatModel chatModel,
+                                       ObjectMapper objectMapper) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.modelPricingMap = initializeModelPricing();
-
-        // 初始化OpenAI API和聊天模型
-        OpenAiApi openAiApi = createOpenAiApi();
-        this.chatModel = createChatModel(openAiApi);
+        this.chatModel = chatModel;
         this.streamingChatModel = this.chatModel; // OpenAiChatModel同时实现了StreamingChatModel
 
         log.info("OpenAI聊天服务初始化完成: baseUrl={}, models={}",
@@ -176,55 +174,6 @@ public class OpenAIChatCompletionService implements ChatCompletionService {
     }
 
     // =================== 私有辅助方法 ===================
-
-    /**
-     * 创建OpenAI API实例
-     */
-    private OpenAiApi createOpenAiApi() {
-        LlmProperties.OpenAiProperties openAiConfig = properties.getOpenai();
-
-        // 构建自定义的RestClient
-        RestClient.Builder restClientBuilder = RestClient.builder()
-                .baseUrl(openAiConfig.getBaseUrl())
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + openAiConfig.getApiKey())
-                .defaultHeader(HttpHeaders.USER_AGENT, "BaseAI-SpringAI/2.0");
-
-        // 如果配置了组织ID
-        if (openAiConfig.getOrganization() != null && !openAiConfig.getOrganization().isEmpty()) {
-            restClientBuilder.defaultHeader("OpenAI-Organization", openAiConfig.getOrganization());
-        }
-
-        // 创建OpenAI API
-        return new OpenAiApi.Builder()
-                .baseUrl(openAiConfig.getBaseUrl())
-                .apiKey(openAiConfig.getApiKey())
-                .restClientBuilder(restClientBuilder)
-                .build();
-    }
-
-    /**
-     * 创建聊天模型
-     */
-    private OpenAiChatModel createChatModel(OpenAiApi openAiApi) {
-        // 创建重试模板
-        RetryTemplate retryTemplate = RetryUtils.DEFAULT_RETRY_TEMPLATE;
-
-        // 设置默认选项
-        OpenAiChatOptions defaultOptions = OpenAiChatOptions.builder()
-                .model(properties.getDefaultParameters().getModel())
-                .temperature(properties.getDefaultParameters().getTemperature())
-                .maxTokens(properties.getDefaultParameters().getMaxTokens())
-                .topP(properties.getDefaultParameters().getTopP())
-                .frequencyPenalty(properties.getDefaultParameters().getFrequencyPenalty())
-                .presencePenalty(properties.getDefaultParameters().getPresencePenalty())
-                .build();
-
-        return OpenAiChatModel.builder()
-                .openAiApi(openAiApi)
-                .defaultOptions(defaultOptions)
-                .retryTemplate(retryTemplate)
-                .build();
-    }
 
     /**
      * 构建提示词
