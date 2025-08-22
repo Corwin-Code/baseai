@@ -5,11 +5,14 @@ import com.cloud.baseai.infrastructure.exception.ChatException;
 import com.cloud.baseai.infrastructure.exception.ErrorCode;
 import com.cloud.baseai.infrastructure.external.llm.model.ChatCompletionResult;
 import com.cloud.baseai.infrastructure.external.llm.model.ModelRecommendation;
+import com.cloud.baseai.infrastructure.external.llm.model.ServiceRegistrationResult;
 import com.cloud.baseai.infrastructure.external.llm.service.ChatCompletionService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
@@ -78,6 +81,21 @@ public class ChatModelFactory implements ChatCompletionService {
      */
     private final Random random = new Random();
 
+    /**
+     * 可选依赖的服务（Spring会自动注入存在的Bean）
+     */
+    @Autowired(required = false)
+    @Qualifier("openAIChatCompletionService")
+    private ChatCompletionService openAIChatCompletionService;
+
+    @Autowired(required = false)
+    @Qualifier("anthropicChatCompletionService")
+    private ChatCompletionService anthropicChatCompletionService;
+
+    @Autowired(required = false)
+    @Qualifier("qwenChatCompletionService")
+    private ChatCompletionService qwenChatCompletionService;
+
     @Autowired
     public ChatModelFactory(LlmProperties llmProperties, ApplicationContext applicationContext) {
         this.llmProperties = llmProperties;
@@ -85,46 +103,59 @@ public class ChatModelFactory implements ChatCompletionService {
     }
 
     /**
-     * 初始化工厂，注册所有可用的LLM服务
+     * 初始化工厂，安全地注册所有可用的LLM服务
      */
     @PostConstruct
     public void initialize() {
-        log.info("初始化聊天模型工厂");
+        log.info("开始初始化聊天模型工厂，安全加载模式");
 
-        int registeredServices = 0;
+        int totalServices = 0;
+        int successfulServices = 0;
+        Map<String, String> registrationResults = new HashMap<>();
 
         // 注册OpenAI服务
-        if (llmProperties.getOpenai().getEnabled()) {
-            registeredServices += registerOpenAiService();
+        ServiceRegistrationResult openaiResult = registerOpenAiService();
+        totalServices++;
+        if (openaiResult.success()) {
+            successfulServices++;
             providerWeights.put("openai", 30); // 稳定性好，生态丰富
         }
+        registrationResults.put("OpenAI", openaiResult.status());
 
         // 注册Anthropic服务
-        if (llmProperties.getAnthropic().getEnabled()) {
-            registeredServices += registerAnthropicService();
+        ServiceRegistrationResult anthropicResult = registerAnthropicService();
+        totalServices++;
+        if (anthropicResult.success()) {
+            successfulServices++;
             providerWeights.put("anthropic", 25); // 推理能力强，适合复杂任务
         }
+        registrationResults.put("Anthropic", anthropicResult.status());
 
         // 注册通义千问服务
-        if (llmProperties.getQwen().getEnabled()) {
-            registeredServices += registerQwenService();
+        ServiceRegistrationResult qwenResult = registerQwenService();
+        totalServices++;
+        if (qwenResult.success()) {
+            successfulServices++;
             providerWeights.put("qwen", 45); // 中文优化，成本优势
         }
+        registrationResults.put("Qwen", qwenResult.status());
 
         // 初始化负载均衡器
         this.loadBalancer = createLoadBalancer(llmProperties.getLoadBalancing());
 
         // 验证至少有一个服务可用
-        if (registeredServices == 0) {
+        if (successfulServices == 0) {
+            log.error("聊天模型工厂初始化失败：没有可用的聊天服务");
+            logRegistrationSummary(registrationResults);
             throw new ChatException(ErrorCode.EXT_LLM_001);
         }
 
-        log.info("聊天模型工厂初始化完成: 注册服务数={}, 提供商={}, 总模型数={}, 负载均衡策略={}, 故障转移={}",
-                registeredServices, providerServices.keySet(),
-                modelToProvider.size(),
-                llmProperties.getLoadBalancing(),
-                llmProperties.getFailoverEnabled());
+        // 记录初始化结果
+        log.info("聊天模型工厂初始化完成: 成功加载={}/{}, 总模型数={}, 负载均衡={}, 故障转移={}",
+                successfulServices, totalServices, modelToProvider.size(),
+                llmProperties.getLoadBalancing(), llmProperties.getFailoverEnabled());
 
+        logRegistrationSummary(registrationResults);
         log.debug("可用模型清单: {}", modelToProvider.keySet());
     }
 
@@ -138,11 +169,11 @@ public class ChatModelFactory implements ChatCompletionService {
         ChatCompletionService service = selectService(provider, context);
 
         try {
-            log.debug("使用服务生成完成: provider={}, model={}", provider, model);
+            log.debug("使用聊天服务生成完成: provider={}, model={}", provider, model);
             return service.generateCompletion(context);
 
         } catch (Exception e) {
-            log.warn("服务调用失败: provider={}, model={}, error={}", provider, model, e.getMessage());
+            log.warn("聊天服务调用失败: provider={}, model={}, error={}", provider, model, e.getMessage());
 
             if (llmProperties.getFailoverEnabled()) {
                 return handleFailover(context, provider, e);
@@ -159,7 +190,7 @@ public class ChatModelFactory implements ChatCompletionService {
         ChatCompletionService service = selectService(provider, context);
 
         try {
-            log.debug("使用服务生成流式响应: provider={}, model={}", provider, model);
+            log.debug("使用聊天服务生成流式响应: provider={}, model={}", provider, model);
             service.generateStreamResponse(context, onChunk);
 
         } catch (Exception e) {
@@ -190,7 +221,7 @@ public class ChatModelFactory implements ChatCompletionService {
     public boolean isHealthy() {
         // 至少有一个服务健康就认为整体健康
         boolean healthy = providerServices.values().stream().anyMatch(ChatCompletionService::isHealthy);
-        log.debug("整体健康状态: {}, 服务详情: {}", healthy, getServiceHealthDetails());
+        log.debug("整体健康状态: {}, 聊天服务详情: {}", healthy, getServiceHealthDetails());
         return healthy;
     }
 
@@ -282,7 +313,7 @@ public class ChatModelFactory implements ChatCompletionService {
             // 如果默认提供商不可用，选择一个健康的服务
             service = selectHealthyService(defaultProvider);
             if (service != null) {
-                log.warn("默认提供商 {} 不可用，使用备选服务", defaultProvider);
+                log.warn("默认提供商 {} 不可用，使用备选聊天服务", defaultProvider);
             }
         }
 
@@ -394,50 +425,153 @@ public class ChatModelFactory implements ChatCompletionService {
 
     /**
      * 注册OpenAI服务
+     *
+     * <p>优先使用自动注入的服务Bean，如果不可用则尝试手动查找Bean。
+     * 记录详细的注册状态和失败原因。</p>
+     *
+     * @return 注册结果，包含成功状态和详细信息
      */
-    private int registerOpenAiService() {
+    private ServiceRegistrationResult registerOpenAiService() {
+        if (!llmProperties.getOpenai().getEnabled()) {
+            return ServiceRegistrationResult.disabled("OpenAI配置已禁用");
+        }
+
         try {
-            ChatCompletionService openAiService = applicationContext.getBean(
-                    "openAIChatCompletionService", ChatCompletionService.class);
-            registerProvider("openai", openAiService, llmProperties.getOpenai().getModels());
-//            log.info("成功注册OpenAI服务: models={}", llmProperties.getOpenai().getModels());
-            return 1;
+            ChatCompletionService service = null;
+
+            // 策略1: 使用自动注入的服务
+            if (openAIChatCompletionService != null) {
+                service = openAIChatCompletionService;
+                log.debug("使用自动注入的OpenAI聊天服务");
+            } else {
+                // 策略2: 手动查找Bean（fallback方式）
+                service = findServiceBeanSafely("openAIChatCompletionService", "OpenAI聊天");
+            }
+
+            if (service != null) {
+                registerProvider("openai", service, llmProperties.getOpenai().getModels());
+//                log.info("成功注册OpenAI聊天服务: models={}", llmProperties.getOpenai().getModels());
+                return ServiceRegistrationResult.success("OpenAI聊天服务注册成功，模型数: " + llmProperties.getOpenai().getModels().size());
+            } else {
+                return ServiceRegistrationResult.failed("OpenAI聊天服务Bean不存在或创建失败");
+            }
+
         } catch (Exception e) {
-            log.warn("OpenAI服务注册失败: {}", e.getMessage());
-            return 0;
+            log.warn("OpenAI聊天服务注册失败: {}", e.getMessage(), e);
+            return ServiceRegistrationResult.failed("OpenAI聊天服务注册异常: " + e.getMessage());
         }
     }
 
     /**
      * 注册Anthropic服务
+     *
+     * @return 注册结果
      */
-    private int registerAnthropicService() {
+    private ServiceRegistrationResult registerAnthropicService() {
+        if (!llmProperties.getAnthropic().getEnabled()) {
+            return ServiceRegistrationResult.disabled("Anthropic配置已禁用");
+        }
+
         try {
-            ChatCompletionService anthropicService = applicationContext.getBean(
-                    "anthropicChatCompletionService", ChatCompletionService.class);
-            registerProvider("anthropic", anthropicService, llmProperties.getAnthropic().getModels());
-//            log.info("成功注册Anthropic服务: models={}", llmProperties.getAnthropic().getModels());
-            return 1;
+            ChatCompletionService service = null;
+
+            if (anthropicChatCompletionService != null) {
+                service = anthropicChatCompletionService;
+                log.debug("使用自动注入的Anthropic聊天服务");
+            } else {
+                service = findServiceBeanSafely("anthropicChatCompletionService", "Anthropic聊天");
+            }
+
+            if (service != null) {
+                registerProvider("anthropic", service, llmProperties.getAnthropic().getModels());
+//                log.info("成功注册Anthropic聊天服务: models={}", llmProperties.getAnthropic().getModels());
+                return ServiceRegistrationResult.success("Anthropic聊天服务注册成功，模型数: " + llmProperties.getAnthropic().getModels().size());
+            } else {
+                return ServiceRegistrationResult.failed("Anthropic聊天服务Bean不存在或创建失败");
+            }
+
         } catch (Exception e) {
-            log.warn("Anthropic服务注册失败: {}", e.getMessage());
-            return 0;
+            log.warn("Anthropic聊天服务注册失败: {}", e.getMessage(), e);
+            return ServiceRegistrationResult.failed("Anthropic聊天服务注册异常: " + e.getMessage());
         }
     }
 
     /**
      * 注册通义千问服务
+     *
+     * @return 注册结果
      */
-    private int registerQwenService() {
-        try {
-            ChatCompletionService qwenService = applicationContext.getBean(
-                    "qwenChatCompletionService", ChatCompletionService.class);
-            registerProvider("qwen", qwenService, llmProperties.getQwen().getModels());
-//            log.info("成功注册通义千问服务: models={}", llmProperties.getQwen().getModels());
-            return 1;
-        } catch (Exception e) {
-            log.warn("通义千问服务注册失败: {}", e.getMessage());
-            return 0;
+    private ServiceRegistrationResult registerQwenService() {
+        if (!llmProperties.getQwen().getEnabled()) {
+            return ServiceRegistrationResult.disabled("通义千问配置已禁用");
         }
+
+        try {
+            ChatCompletionService service = null;
+
+            if (qwenChatCompletionService != null) {
+                service = qwenChatCompletionService;
+                log.debug("使用自动注入的通义千问聊天服务");
+            } else {
+                service = findServiceBeanSafely("qwenChatCompletionService", "通义千问聊天");
+            }
+
+            if (service != null) {
+                registerProvider("qwen", service, llmProperties.getQwen().getModels());
+//                log.info("成功注册通义千问聊天服务: models={}", llmProperties.getQwen().getModels());
+                return ServiceRegistrationResult.success("通义千问聊天服务注册成功，模型数: " + llmProperties.getQwen().getModels().size());
+            } else {
+                return ServiceRegistrationResult.failed("通义千问聊天服务Bean不存在或创建失败");
+            }
+
+        } catch (Exception e) {
+            log.warn("通义千问聊天服务注册失败: {}", e.getMessage(), e);
+            return ServiceRegistrationResult.failed("通义千问聊天服务注册异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 安全地查找服务Bean
+     *
+     * <p>使用Spring的Bean查找API，优雅处理Bean不存在的情况。</p>
+     *
+     * @param beanName    Bean名称
+     * @param serviceName 服务显示名称（用于日志）
+     * @return 找到的服务实例，如果不存在则返回null
+     */
+    private ChatCompletionService findServiceBeanSafely(String beanName, String serviceName) {
+        try {
+            // 首先检查Bean是否存在
+            if (!applicationContext.containsBean(beanName)) {
+                log.debug("{}服务Bean不存在: {}", serviceName, beanName);
+                return null;
+            }
+
+            // 尝试获取Bean
+            ChatCompletionService service = applicationContext.getBean(beanName, ChatCompletionService.class);
+            log.debug("成功通过手动查找获取{}服务", serviceName);
+            return service;
+
+        } catch (NoSuchBeanDefinitionException e) {
+            log.debug("{}服务Bean定义不存在: {}", serviceName, e.getMessage());
+            return null;
+        } catch (Exception e) {
+            log.warn("获取{}服务Bean时发生异常: {}", serviceName, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 记录注册摘要
+     *
+     * @param results 各服务的注册结果
+     */
+    private void logRegistrationSummary(Map<String, String> results) {
+        log.info("=== LLM聊天服务注册摘要 ===");
+        for (Map.Entry<String, String> entry : results.entrySet()) {
+            log.info("  {}: {}", entry.getKey(), entry.getValue());
+        }
+        log.info("=== 可用聊天服务: {} ===", providerServices.keySet());
     }
 
     /**
@@ -456,10 +590,8 @@ public class ChatModelFactory implements ChatCompletionService {
             }
         }
 
-        // 生产更友好：INFO 打简洁摘要，DEBUG/TRACE 打细节
-        log.info("成功注册{}服务: modelCount={}, provider={}",
-                providerName, models.size(), providerName);
-        log.debug("注册模型映射详情({}): {}", providerName, models);
+        log.debug("注册{}聊天服务: 模型数={}, 冲突处理={}", providerName, models.size(),
+                conflicts.isEmpty() ? "无" : conflicts.size() + "个");
 
         if (!conflicts.isEmpty()) {
             log.warn("模型名冲突并已处理: {}", conflicts);
@@ -505,7 +637,7 @@ public class ChatModelFactory implements ChatCompletionService {
         // 检查服务健康状态
         if (!service.isHealthy()) {
             if (llmProperties.getFailoverEnabled()) {
-                log.warn("服务不健康，尝试故障转移: provider={}", provider);
+                log.warn("聊天服务不健康，尝试故障转移: provider={}", provider);
                 return selectHealthyService(provider);
             } else {
                 throw new ChatException(ErrorCode.EXT_LLM_008, provider);
@@ -526,7 +658,7 @@ public class ChatModelFactory implements ChatCompletionService {
                 .toList();
 
         if (healthyServices.isEmpty()) {
-            log.error("没有健康的备用服务可用");
+            log.error("没有健康的备用聊天服务可用");
             return null;
         }
 
@@ -538,7 +670,7 @@ public class ChatModelFactory implements ChatCompletionService {
             default -> healthyServices.getFirst(); // 默认选择第一个
         };
 
-        log.info("故障转移成功: 选择服务 {}", getProviderName(selected));
+        log.info("故障转移成功: 选择聊天服务 {}", getProviderName(selected));
         return selected;
     }
 
@@ -673,7 +805,7 @@ public class ChatModelFactory implements ChatCompletionService {
             return new ModelRecommendation("anthropic", "claude-3-sonnet-20240229", "默认推荐，推理能力强");
         }
 
-        throw new ChatException(ErrorCode.EXT_LLM_006, "没有可用的聊天服务");
+        throw new ChatException(ErrorCode.EXT_LLM_011);
     }
 
     /**

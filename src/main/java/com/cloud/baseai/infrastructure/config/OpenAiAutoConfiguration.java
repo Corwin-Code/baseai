@@ -16,7 +16,6 @@ import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
@@ -527,10 +526,7 @@ public class OpenAiAutoConfiguration extends BaseAutoConfiguration {
      */
     @Primary
     @Bean(name = "openAiEmbeddingModel")
-    @ConditionalOnProperties({
-            @ConditionalOnProperty(prefix = "baseai.llm.openai", name = "enabled", havingValue = "true"),
-            @ConditionalOnProperty(prefix = "baseai.llm", name = "default-provider", havingValue = "openai")
-    })
+    @ConditionalOnProperty(prefix = "baseai.llm.openai", name = "enabled", havingValue = "true")
     @ConditionalOnBean(OpenAiApi.class)
     public OpenAiEmbeddingModel openAiEmbeddingModel(
             OpenAiApi openAiApi,

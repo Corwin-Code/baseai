@@ -541,10 +541,7 @@ public class QwenAutoConfiguration extends BaseAutoConfiguration {
      * @return 配置好的嵌入模型
      */
     @Bean(name = "qwenEmbeddingModel")
-    @ConditionalOnProperties({
-            @ConditionalOnProperty(prefix = "baseai.llm.qwen", name = "enabled", havingValue = "true"),
-            @ConditionalOnProperty(prefix = "baseai.llm", name = "default-provider", havingValue = "qwen")
-    })
+    @ConditionalOnProperty(prefix = "baseai.llm.qwen", name = "enabled", havingValue = "true")
     @ConditionalOnBean(DashScopeApi.class)
     public DashScopeEmbeddingModel qwenEmbeddingModel(
             DashScopeApi dashScopeApi,

@@ -462,7 +462,7 @@ public enum ErrorCode {
     EXT_QWEN_011("EXT_QWEN_011", "通义千问API配额不足"),
     EXT_QWEN_012("EXT_QWEN_012", "通义千问模型不可用"),
 
-    EXT_LLM_001("EXT_LLM_001", "没有可用的LLM服务"),
+    EXT_LLM_001("EXT_LLM_001", "没有可用的LLM服务，请检查配置"),
     EXT_LLM_002("EXT_LLM_002", "所有模型调用失败: "),
     EXT_LLM_003("EXT_LLM_003", "流式响应失败"),
     EXT_LLM_004("EXT_LLM_004", "服务提供商不可用: "),
@@ -472,6 +472,8 @@ public enum ErrorCode {
     EXT_LLM_008("EXT_LLM_008", "服务不可用: "),
     EXT_LLM_009("EXT_LLM_009", "没有可用的备用服务"),
     EXT_LLM_010("EXT_LLM_010", "所有服务均不可用"),
+    EXT_LLM_011("EXT_LLM_011", "没有可用的聊天服务"),
+    EXT_LLM_012("EXT_LLM_012", "没有可用的嵌入服务"),
 
     // 嵌入服务错误
     EXT_EMB_001("EXT_EMB_001", "嵌入模型不可用"),
